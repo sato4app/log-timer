@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>logTimer - 運動タイマー</title>
+    <meta name="description" content="準備・運動・休憩・回数を設定できるインターバルタイマー" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+    <!-- iOS はマニフェストのアイコンを見ないため個別に指定する -->
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="logTimer" />
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        html, body {
+            background: #0f172a;
+            margin: 0;
+        }
+        body {
+            /* 引っ張って再読み込みされるのを防ぐ */
+            overscroll-behavior-y: contain;
+            -webkit-tap-highlight-color: transparent;
+        }
+        button {
+            /* ダブルタップによる拡大を防ぎ、押した感触を軽くする */
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        /* 数値入力のスピナーを隠す（独自の +/- ボタンを使うため） */
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        /* タイマー数字は等幅にして桁の増減でガタつかせない */
+        .tabular { font-variant-numeric: tabular-nums; }
+        #loading {
+            color: rgba(255, 255, 255, 0.5);
+            font-family: system-ui, sans-serif;
+            font-size: 14px;
+            text-align: center;
+            padding-top: 45vh;
+        }
+    </style>
+</head>
+<body>
+    <noscript>このアプリはJavaScriptが必要です。</noscript>
+    <div id="root"><div id="loading">読み込み中…</div></div>
+
+    <script type="text/babel" src="app.js"></script>
+
+    <script>
+        // Service Worker の登録（オフライン実行とホーム画面への追加に必要）
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('service-worker.js').catch(function () {
+                    // 登録できなくてもタイマー自体は動く
+                });
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+// logTimer Service Worker
+// キャッシュ名を変えると古いキャッシュを破棄して入れ替わる
+const CACHE_NAME = 'logtimer-v1';
+
+// アプリ本体（同一オリジン）。相対パスなのでサブディレクトリ配信でも動く
+const APP_SHELL = [
+    './',
+    './index.html',
+    './app.js',
+    './manifest.json',
+    './icon-180.png',
+    './icon-192.png',
+    './icon-512.png',
+];
+
+self.addEventListener('install', (event) => {
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        // 1つ失敗しても他は入れたいので個別に取得する
+        await Promise.all(APP_SHELL.map((url) => cache.add(url).catch(() => {})));
+        await self.skipWaiting();
+    })());
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+        const names = await caches.keys();
+        await Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)));
+        await self.clients.claim();
+    })());
+});
+
+// キャッシュに入れてよいレスポンスか（opaque はCDNのスクリプト等）
+const isCacheable = (res) => res && (res.status === 200 || res.type === 'opaque');
+
+self.addEventListener('fetch', (event) => {
+    const req = event.request;
+    if (req.method !== 'GET') return;
+
+    const url = new URL(req.url);
+    const sameOrigin = url.origin === self.location.origin;
+
+    // ページ遷移: まずネットワーク、失敗したらキャッシュ（更新を取りこぼさないため）
+    if (req.mode === 'navigate') {
+        event.respondWith((async () => {
+            try {
+                const res = await fetch(req);
+                if (isCacheable(res)) {
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put(req, res.clone());
+                }
+                return res;
+            } catch (e) {
+                const cached = await caches.match(req);
+                return cached || await caches.match('./index.html');
+            }
+        })());
+        return;
+    }
+
+    if (sameOrigin) {
+        // 自前のファイル: キャッシュを即返しつつ裏で更新する
+        event.respondWith((async () => {
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(req);
+            const network = fetch(req).then((res) => {
+                if (isCacheable(res)) cache.put(req, res.clone());
+                return res;
+            }).catch(() => null);
+            return cached || await network || Response.error();
+        })());
+        return;
+    }
+
+    // CDN（React / Tailwind / Babel）: 一度取得したらキャッシュから返す＝オフラインでも起動する
+    event.respondWith((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        const cached = await cache.match(req);
+        if (cached) return cached;
+        try {
+            const res = await fetch(req);
+            if (isCacheable(res)) cache.put(req, res.clone());
+            return res;
+        } catch (e) {
+            return Response.error();
+        }
+    })());
+});
