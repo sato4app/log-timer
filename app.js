@@ -57,41 +57,43 @@ const ArrowIcon = ({ up }) => (
     </svg>
 );
 
-// 設定値の増減フィールド
+// 設定値の増減フィールド（4項目を横に並べるため縦積みの1枠にまとめる）
 const NumberField = ({ label, value, onChange, limit, disabled }) => {
     const step = (delta) => onChange(clamp(value + delta, limit.min, limit.max));
+    const btn = 'h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20';
 
     return (
-        <div className="flex items-center justify-between gap-3 py-1.5">
-            <span className="text-sm text-white/80">{label}</span>
-            <div className="flex items-center gap-1">
+        <div className="min-w-0 flex flex-col gap-1">
+            <div className="text-xs text-white/70 text-center truncate">
+                {label}<span className="text-white/40">（{limit.unit}）</span>
+            </div>
+            <input
+                type="number"
+                inputMode="numeric"
+                value={value}
+                disabled={disabled}
+                onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    onChange(Number.isNaN(n) ? limit.min : clamp(n, limit.min, limit.max));
+                }}
+                className="w-full h-9 rounded-lg bg-white/10 text-white text-center tabular disabled:opacity-40"
+                aria-label={label}
+            />
+            <div className="grid grid-cols-2 gap-1">
                 <button
                     type="button"
                     onClick={() => step(-1)}
                     disabled={disabled || value <= limit.min}
-                    className="w-9 h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
+                    className={btn}
                     aria-label={label + 'を減らす'}
                 >−</button>
-                <input
-                    type="number"
-                    inputMode="numeric"
-                    value={value}
-                    disabled={disabled}
-                    onChange={(e) => {
-                        const n = parseInt(e.target.value, 10);
-                        onChange(Number.isNaN(n) ? limit.min : clamp(n, limit.min, limit.max));
-                    }}
-                    className="w-14 h-8 rounded-lg bg-white/10 text-white text-center tabular disabled:opacity-40"
-                    aria-label={label}
-                />
                 <button
                     type="button"
                     onClick={() => step(1)}
                     disabled={disabled || value >= limit.max}
-                    className="w-9 h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
+                    className={btn}
                     aria-label={label + 'を増やす'}
                 >＋</button>
-                <span className="w-6 text-sm text-white/60">{limit.unit}</span>
             </div>
         </div>
     );
@@ -437,7 +439,7 @@ const App = () => {
                             合計 {Math.floor(totalSeconds / 60)}分{String(totalSeconds % 60).padStart(2, '0')}秒
                         </div>
                     </div>
-                    <div className="divide-y divide-white/10">
+                    <div className="grid grid-cols-4 gap-2">
                         <NumberField label="準備" value={settings.prepare} limit={LIMITS.prepare} disabled={isRunning}
                             onChange={(v) => setSettings((s) => ({ ...s, prepare: v }))} />
                         <NumberField label="運動" value={settings.work} limit={LIMITS.work} disabled={isRunning}
