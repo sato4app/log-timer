@@ -129,6 +129,17 @@ const CalendarIcon = () => (
     </svg>
 );
 
+// 履歴の一覧に戻るアイコン
+const ListIcon = () => (
+    <svg
+        width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+        <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+    </svg>
+);
+
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
 // 履歴を「年-月-日」ごとの件数にまとめる
@@ -642,19 +653,32 @@ const App = () => {
 
                 {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
                 <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
-                    <div className="flex items-center justify-between px-1">
-                        <div className="text-sm text-white/80">履歴</div>
+                    <div className="flex items-center justify-between gap-2 px-1">
+                        <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
                         <div className="flex items-center gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setShowCalendar((v) => !v)}
-                                aria-pressed={showCalendar}
-                                aria-label="日ごとの実施回数"
-                                title="日ごとの実施回数"
-                                className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
-                                    ? 'bg-white text-slate-900'
-                                    : 'bg-white/10 text-white/70')}
-                            ><CalendarIcon /></button>
+                            {/* 一覧 / カレンダーの切り替え（押している方が白く反転する） */}
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCalendar(false)}
+                                    aria-pressed={!showCalendar}
+                                    aria-label="履歴の一覧"
+                                    title="履歴の一覧"
+                                    className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
+                                        ? 'bg-white/10 text-white/70'
+                                        : 'bg-white text-slate-900')}
+                                ><ListIcon /></button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCalendar(true)}
+                                    aria-pressed={showCalendar}
+                                    aria-label="日ごとの実施回数"
+                                    title="日ごとの実施回数"
+                                    className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
+                                        ? 'bg-white text-slate-900'
+                                        : 'bg-white/10 text-white/70')}
+                                ><CalendarIcon /></button>
+                            </div>
                             {history.length > 0 && (
                                 <button
                                     type="button"
