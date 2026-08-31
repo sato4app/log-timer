@@ -117,6 +117,41 @@ const ArrowIcon = ({ up }) => (
     </svg>
 );
 
+// 日ごとの実施回数を開くアイコン
+const CalendarIcon = () => (
+    <svg
+        width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+    </svg>
+);
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// 履歴を「年-月-日」ごとの件数にまとめる
+const countByDay = (history) => {
+    const counts = {};
+    history.forEach((h) => {
+        const d = new Date(h.at);
+        if (Number.isNaN(d.getTime())) return;
+        const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+        counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+};
+
+// 月カレンダーのマス目（先頭は曜日合わせの空きマス）
+const monthCells = (year, month) => {
+    const cells = [];
+    for (let i = 0; i < new Date(year, month, 1).getDay(); i++) cells.push(null);
+    const last = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= last; d++) cells.push(d);
+    return cells;
+};
+
 // 設定値の増減フィールド（4項目を横に並べるため縦積みの1枠にまとめる）
 const NumberField = ({ label, value, onChange, limit, disabled }) => {
     const step = (delta) => onChange(clamp(value + delta, limit.min, limit.max));
@@ -166,6 +201,11 @@ const App = () => {
     const [muted, setMuted] = useState(false);
     const [installEvent, setInstallEvent] = useState(null);
     const [history, setHistory] = useState(loadHistory); // 完了した実行の記録（新しい順）
+    const [showCalendar, setShowCalendar] = useState(false); // 履歴一覧と日別カレンダーの切り替え
+    const [calMonth, setCalMonth] = useState(() => {
+        const d = new Date();
+        return { y: d.getFullYear(), m: d.getMonth() };
+    });
 
     const [phase, setPhase] = useState(PHASE.IDLE);
     const [currentSet, setCurrentSet] = useState(1);
@@ -455,6 +495,19 @@ const App = () => {
     // 円の表示サイズ（元は 300px、約70%に縮小）。狭い画面ではさらに縮める
     const DIAL_SIZE = 'min(210px, 56vw)';
 
+    // カレンダー表示用: 日ごとの実施回数と、その月のマス目
+    const dayCounts = countByDay(history);
+    const cells = monthCells(calMonth.y, calMonth.m);
+    const monthTotal = cells.reduce(
+        (sum, d) => sum + (d === null ? 0 : (dayCounts[calMonth.y + '-' + calMonth.m + '-' + d] || 0)),
+        0,
+    );
+    const today = new Date();
+    const shiftMonth = (delta) => setCalMonth((c) => {
+        const d = new Date(c.y, c.m + delta, 1);
+        return { y: d.getFullYear(), m: d.getMonth() };
+    });
+
     return (
         <div
             className={'h-[100dvh] flex flex-col overflow-hidden transition-colors duration-500 text-white ' + style.bg}
@@ -550,83 +603,153 @@ const App = () => {
                     </div>
                 </div>
 
-                {/* 設定 */}
-                <div className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
-                    <div className="flex items-baseline justify-between mb-1">
-                        <div className="text-sm text-white/80">設定</div>
-                        <div className="text-xs text-white/60">
-                            合計 {Math.floor(totalSeconds / 60)}分{String(totalSeconds % 60).padStart(2, '0')}秒
+                {/* 設定（カレンダー表示中は隠して、その分カレンダーを広く使う） */}
+                {!showCalendar && (
+                    <div className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
+                        <div className="flex items-baseline justify-between mb-1">
+                            <div className="text-sm text-white/80">設定</div>
+                            <div className="text-xs text-white/60">
+                                合計 {Math.floor(totalSeconds / 60)}分{String(totalSeconds % 60).padStart(2, '0')}秒
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                            <NumberField label="準備" value={settings.prepare} limit={LIMITS.prepare} disabled={isRunning}
+                                onChange={(v) => setSettings((s) => ({ ...s, prepare: v }))} />
+                            <NumberField label="運動" value={settings.work} limit={LIMITS.work} disabled={isRunning}
+                                onChange={(v) => setSettings((s) => ({ ...s, work: v }))} />
+                            <NumberField label="休憩" value={settings.rest} limit={LIMITS.rest} disabled={isRunning}
+                                onChange={(v) => setSettings((s) => ({ ...s, rest: v }))} />
+                            <NumberField label="回数" value={settings.sets} limit={LIMITS.sets} disabled={isRunning}
+                                onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
+                        </div>
+                        <div className="mt-2 flex items-center gap-4 text-xs">
+                            <button
+                                type="button"
+                                onClick={restoreDefaults}
+                                disabled={isRunning || isDefaultSettings}
+                                className="text-white/70 underline disabled:opacity-30"
+                            >既定値に戻す（{defaults.prepare}/{defaults.work}/{defaults.rest}/{defaults.sets}回）</button>
+                            <button
+                                type="button"
+                                onClick={saveAsDefaults}
+                                disabled={isRunning || isDefaultSettings}
+                                className="text-white/70 underline disabled:opacity-30"
+                                title="いまの設定を既定値として保存します"
+                            >既定値に設定</button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-4 gap-2">
-                        <NumberField label="準備" value={settings.prepare} limit={LIMITS.prepare} disabled={isRunning}
-                            onChange={(v) => setSettings((s) => ({ ...s, prepare: v }))} />
-                        <NumberField label="運動" value={settings.work} limit={LIMITS.work} disabled={isRunning}
-                            onChange={(v) => setSettings((s) => ({ ...s, work: v }))} />
-                        <NumberField label="休憩" value={settings.rest} limit={LIMITS.rest} disabled={isRunning}
-                            onChange={(v) => setSettings((s) => ({ ...s, rest: v }))} />
-                        <NumberField label="回数" value={settings.sets} limit={LIMITS.sets} disabled={isRunning}
-                            onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
-                    </div>
-                    <div className="mt-2 flex items-center gap-4 text-xs">
-                        <button
-                            type="button"
-                            onClick={restoreDefaults}
-                            disabled={isRunning || isDefaultSettings}
-                            className="text-white/70 underline disabled:opacity-30"
-                        >既定値に戻す（{defaults.prepare}/{defaults.work}/{defaults.rest}/{defaults.sets}回）</button>
-                        <button
-                            type="button"
-                            onClick={saveAsDefaults}
-                            disabled={isRunning || isDefaultSettings}
-                            className="text-white/70 underline disabled:opacity-30"
-                            title="いまの設定を既定値として保存します"
-                        >既定値に設定</button>
-                    </div>
-                </div>
+                )}
 
                 {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
                 <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
-                    <div className="flex items-baseline justify-between px-1">
+                    <div className="flex items-center justify-between px-1">
                         <div className="text-sm text-white/80">履歴</div>
-                        {history.length > 0 && (
+                        <div className="flex items-center gap-3">
                             <button
                                 type="button"
-                                onClick={clearHistory}
-                                disabled={isRunning}
-                                className="text-xs text-white/60 underline disabled:opacity-30"
-                            >全消去</button>
-                        )}
+                                onClick={() => setShowCalendar((v) => !v)}
+                                aria-pressed={showCalendar}
+                                aria-label="日ごとの実施回数"
+                                title="日ごとの実施回数"
+                                className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
+                                    ? 'bg-white text-slate-900'
+                                    : 'bg-white/10 text-white/70')}
+                            ><CalendarIcon /></button>
+                            {history.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={clearHistory}
+                                    disabled={isRunning}
+                                    className="text-xs text-white/60 underline disabled:opacity-30"
+                                >全消去</button>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
-                        <span className="flex-1 min-w-0">日時</span>
-                        <span className="w-8 text-right">準備</span>
-                        <span className="w-8 text-right">運動</span>
-                        <span className="w-8 text-right">休憩</span>
-                        <span className="w-8 text-right">回数</span>
-                    </div>
-                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10">
-                        {history.length === 0 ? (
-                            <p className="text-xs text-white/40 text-center py-4">
-                                最後まで実行すると、ここに記録されます
-                            </p>
-                        ) : history.map((h) => (
-                            <button
-                                key={h.id}
-                                type="button"
-                                onClick={() => runAgain(h)}
-                                disabled={isRunning}
-                                title="タップするとこの設定で実行します"
-                                className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
-                            >
-                                <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
-                                <span className="w-8 text-right tabular">{h.prepare}</span>
-                                <span className="w-8 text-right tabular">{h.work}</span>
-                                <span className="w-8 text-right tabular">{h.rest}</span>
-                                <span className="w-8 text-right tabular">{h.sets}</span>
-                            </button>
-                        ))}
-                    </div>
+
+                    {showCalendar ? (
+                        /* 日ごとの実施回数（月カレンダー） */
+                        <div className="flex-1 min-h-0 flex flex-col">
+                            <div className="flex items-center justify-between px-1 py-1">
+                                <button
+                                    type="button"
+                                    onClick={() => shiftMonth(-1)}
+                                    className="w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20"
+                                    aria-label="前の月"
+                                >‹</button>
+                                <div className="text-sm text-white/80">
+                                    {calMonth.y}年{calMonth.m + 1}月
+                                    <span className="ml-2 text-xs text-white/60">計 {monthTotal} 回</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => shiftMonth(1)}
+                                    className="w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20"
+                                    aria-label="次の月"
+                                >›</button>
+                            </div>
+                            <div className="grid grid-cols-7 gap-1 pb-1 text-center text-xs">
+                                {WEEKDAYS.map((w, i) => (
+                                    <div key={w} className={i === 0 ? 'text-red-300' : (i === 6 ? 'text-blue-300' : 'text-white/50')}>{w}</div>
+                                ))}
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                                <div className="grid grid-cols-7 gap-1 text-center">
+                                    {cells.map((d, i) => {
+                                        if (d === null) return <div key={'empty' + i} />;
+                                        const n = dayCounts[calMonth.y + '-' + calMonth.m + '-' + d] || 0;
+                                        const isToday = today.getFullYear() === calMonth.y
+                                            && today.getMonth() === calMonth.m
+                                            && today.getDate() === d;
+                                        return (
+                                            <div
+                                                key={d}
+                                                className={'rounded-lg py-1 ' + (n > 0 ? 'bg-white/20' : 'bg-white/5')
+                                                    + (isToday ? ' ring-1 ring-white/70' : '')}
+                                            >
+                                                <div className="text-xs text-white/60 leading-none">{d}</div>
+                                                <div className="text-sm font-bold tabular leading-none mt-1 h-4">
+                                                    {n > 0 ? n : ''}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        /* 実行の一覧 */
+                        <React.Fragment>
+                            <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
+                                <span className="flex-1 min-w-0">日時</span>
+                                <span className="w-8 text-right">準備</span>
+                                <span className="w-8 text-right">運動</span>
+                                <span className="w-8 text-right">休憩</span>
+                                <span className="w-8 text-right">回数</span>
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10">
+                                {history.length === 0 ? (
+                                    <p className="text-xs text-white/40 text-center py-4">
+                                        最後まで実行すると、ここに記録されます
+                                    </p>
+                                ) : history.map((h) => (
+                                    <button
+                                        key={h.id}
+                                        type="button"
+                                        onClick={() => runAgain(h)}
+                                        disabled={isRunning}
+                                        title="タップするとこの設定で実行します"
+                                        className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
+                                    >
+                                        <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
+                                        <span className="w-8 text-right tabular">{h.prepare}</span>
+                                        <span className="w-8 text-right tabular">{h.work}</span>
+                                        <span className="w-8 text-right tabular">{h.rest}</span>
+                                        <span className="w-8 text-right tabular">{h.sets}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </React.Fragment>
+                    )}
                 </div>
 
                 <p className="shrink-0 hidden sm:block text-xs text-white/50 text-center">
