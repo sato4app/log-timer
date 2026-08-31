@@ -1,6 +1,6 @@
 // logTimer Service Worker
 // キャッシュ名を変えると古いキャッシュを破棄して入れ替わる
-const CACHE_NAME = 'logtimer-v2';
+const CACHE_NAME = 'logtimer-v3';
 
 // アプリ本体（同一オリジン）。相対パスなのでサブディレクトリ配信でも動く
 const APP_SHELL = [

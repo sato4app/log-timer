@@ -36,6 +36,41 @@ const PHASE_STYLE = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+// --- 音の鳴らし方 -----------------------------------------------------------
+const SOUND_KEY = 'logtimer-sound';
+const SOUND = { VOICE: 'voice', BEEP: 'beep', OFF: 'off' };
+const SOUND_LABEL = { [SOUND.VOICE]: '音声', [SOUND.BEEP]: '電子音', [SOUND.OFF]: '音 オフ' };
+
+// 読み上げに対応しているか（対応していれば端末内蔵の音声を使うので追加ファイルは不要）
+const CAN_SPEAK = 'speechSynthesis' in window
+    && typeof window.SpeechSynthesisUtterance === 'function';
+
+// ボタンを押すとこの順に切り替わる（読み上げ非対応の端末では「音声」を飛ばす）
+const SOUND_ORDER = CAN_SPEAK
+    ? [SOUND.VOICE, SOUND.BEEP, SOUND.OFF]
+    : [SOUND.BEEP, SOUND.OFF];
+
+const loadSoundMode = () => {
+    try {
+        const saved = localStorage.getItem(SOUND_KEY);
+        return SOUND_ORDER.indexOf(saved) >= 0 ? saved : SOUND_ORDER[0];
+    } catch (e) {
+        // localStorage が使えない環境では既定の鳴らし方にする
+        return SOUND_ORDER[0];
+    }
+};
+
+const saveSoundMode = (mode) => {
+    try {
+        localStorage.setItem(SOUND_KEY, mode);
+    } catch (e) {
+        // 保存できなくてもタイマー自体は動く
+    }
+};
+
+// フェーズ切り替えの読み上げ文（運動だけは何回目かを添える）
+const speechFor = (phase, set) => (phase === PHASE.WORK ? '運動 ' + set + ' 回目' : phase);
+
 // --- 既定値の保存 -----------------------------------------------------------
 const DEFAULTS_KEY = 'logtimer-defaults';
 
@@ -209,7 +244,7 @@ const App = () => {
     const [settings, setSettings] = useState(INITIAL);
     const [defaults, setDefaults] = useState(INITIAL); // 「既定値に戻す」で戻る先
     const [countUp, setCountUp] = useState(false); // false: カウントダウン / true: カウントアップ
-    const [muted, setMuted] = useState(false);
+    const [soundMode, setSoundMode] = useState(loadSoundMode); // 音声 / 電子音 / オフ
     const [installEvent, setInstallEvent] = useState(null);
     const [history, setHistory] = useState(loadHistory); // 完了した実行の記録（新しい順）
     const [showCalendar, setShowCalendar] = useState(false); // 履歴一覧と日別カレンダーの切り替え
@@ -225,12 +260,12 @@ const App = () => {
 
     const deadlineRef = useRef(0);      // 現フェーズの終了時刻（epoch ms）
     const audioCtxRef = useRef(null);
-    const lastBeepRef = useRef(null);   // 秒読みビープの二重再生防止
+    const lastCueRef = useRef(null);    // 秒読みの二重再生防止
     const wakeLockRef = useRef(null);
 
     // --- 音 -----------------------------------------------------------------
+    // 電子音（Web Audio API のサイン波）
     const beep = useCallback((frequency, duration = 0.12) => {
-        if (muted) return;
         try {
             if (!audioCtxRef.current) {
                 audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -252,7 +287,44 @@ const App = () => {
         } catch (e) {
             // 音が出せない環境でもタイマー自体は動かす
         }
-    }, [muted]);
+    }, []);
+
+    // 読み上げ（端末内蔵の音声を使うのでファイル追加なし・オフラインでも鳴る）
+    const speak = useCallback((text, rate = 1.15) => {
+        try {
+            const synth = window.speechSynthesis;
+            // 前の読み上げが残っていると秒読みが遅れるので割り込む
+            if (synth.speaking || synth.pending) synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ja-JP';
+            utterance.rate = rate;
+            synth.speak(utterance);
+        } catch (e) {
+            // 読み上げできない環境でもタイマー自体は動かす
+        }
+    }, []);
+
+    const stopSpeaking = useCallback(() => {
+        try {
+            if (CAN_SPEAK) window.speechSynthesis.cancel();
+        } catch (e) {
+            // 止められなくても支障はない
+        }
+    }, []);
+
+    // 合図をひとつ鳴らす（選ばれている方式で）
+    const notify = useCallback((text, frequency, duration) => {
+        if (soundMode === SOUND.VOICE) speak(text);
+        else if (soundMode === SOUND.BEEP) beep(frequency, duration);
+    }, [soundMode, speak, beep]);
+
+    // 音声 → 電子音 → オフ の順に切り替える（選んだ方式は次回の起動時も引き継ぐ）
+    const cycleSound = useCallback(() => {
+        const next = SOUND_ORDER[(SOUND_ORDER.indexOf(soundMode) + 1) % SOUND_ORDER.length];
+        if (next !== SOUND.VOICE) stopSpeaking();
+        saveSoundMode(next);
+        setSoundMode(next);
+    }, [soundMode, stopSpeaking]);
 
     // --- 画面スリープ防止 ----------------------------------------------------
     const requestWakeLock = useCallback(async () => {
@@ -354,11 +426,12 @@ const App = () => {
             next = nextOf(next.phase, next.set);
         }
 
-        lastBeepRef.current = null;
+        lastCueRef.current = null;
 
         if (next.phase === PHASE.DONE) {
-            beep(1046, 0.35);
-            setTimeout(() => beep(1318, 0.5), 200);
+            notify('終了。お疲れさまでした', 1046, 0.35);
+            // 電子音のときだけ2音目を重ねる（読み上げは文で終わりを伝えられる）
+            if (soundMode === SOUND.BEEP) setTimeout(() => beep(1318, 0.5), 200);
             setPhase(PHASE.DONE);
             setIsRunning(false);
             setRemaining(0);
@@ -367,13 +440,13 @@ const App = () => {
             return;
         }
 
-        beep(next.phase === PHASE.WORK ? 880 : 660, 0.25);
+        notify(speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
         const d = durationOf(next.phase);
         deadlineRef.current = Date.now() + d * 1000;
         setPhase(next.phase);
         setCurrentSet(next.set);
         setRemaining(d);
-    }, [phase, currentSet, nextOf, durationOf, beep, releaseWakeLock, addHistory, settings]);
+    }, [phase, currentSet, nextOf, durationOf, notify, soundMode, beep, releaseWakeLock, addHistory, settings]);
 
     // --- 計時（実時刻ベースなので取りこぼしても遅れない） ----------------------
     useEffect(() => {
@@ -388,15 +461,15 @@ const App = () => {
             setRemaining(rest);
             // 残り3秒からの秒読み
             const sec = Math.ceil(rest);
-            if (sec <= 3 && lastBeepRef.current !== sec) {
-                lastBeepRef.current = sec;
-                beep(784, 0.1);
+            if (sec <= 3 && lastCueRef.current !== sec) {
+                lastCueRef.current = sec;
+                notify(String(sec), 784, 0.1);
             }
         };
 
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
-    }, [isRunning, advance, beep]);
+    }, [isRunning, advance, notify]);
 
     // 待機中は設定変更を残り時間に反映する
     useEffect(() => {
@@ -421,14 +494,15 @@ const App = () => {
         const first = s.prepare > 0 ? PHASE.PREPARE : PHASE.WORK;
         const d = first === PHASE.PREPARE ? s.prepare : s.work;
         deadlineRef.current = Date.now() + d * 1000;
-        lastBeepRef.current = null;
+        lastCueRef.current = null;
         setPhase(first);
         setCurrentSet(1);
         setRemaining(d);
-        beep(first === PHASE.WORK ? 880 : 660, 0.25);
+        // iOS は利用者の操作を起点にしないと読み上げが始まらないので、ここが最初の一声になる
+        notify(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
-    }, [beep, requestWakeLock]);
+    }, [notify, requestWakeLock]);
 
     const start = useCallback(() => {
         if (phase === PHASE.IDLE || phase === PHASE.DONE) {
@@ -457,17 +531,19 @@ const App = () => {
     const pause = useCallback(() => {
         setRemaining(Math.max(0, (deadlineRef.current - Date.now()) / 1000));
         setIsRunning(false);
+        stopSpeaking();
         releaseWakeLock();
-    }, [releaseWakeLock]);
+    }, [stopSpeaking, releaseWakeLock]);
 
     const reset = useCallback(() => {
         setIsRunning(false);
         setPhase(PHASE.IDLE);
         setCurrentSet(1);
         setRemaining(settings.prepare > 0 ? settings.prepare : settings.work);
-        lastBeepRef.current = null;
+        lastCueRef.current = null;
+        stopSpeaking();
         releaseWakeLock();
-    }, [settings, releaseWakeLock]);
+    }, [settings, stopSpeaking, releaseWakeLock]);
 
     const toggle = useCallback(() => (isRunning ? pause() : start()), [isRunning, pause, start]);
 
@@ -543,10 +619,10 @@ const App = () => {
                         )}
                         <button
                             type="button"
-                            onClick={() => setMuted((m) => !m)}
+                            onClick={cycleSound}
                             className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
-                            aria-label="音のオン・オフ"
-                        >{muted ? '音 オフ' : '音 オン'}</button>
+                            aria-label="音の鳴らし方の切り替え（音声 / 電子音 / オフ）"
+                        >{SOUND_LABEL[soundMode]}</button>
                     </div>
                 </header>
 
