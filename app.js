@@ -44,6 +44,36 @@ const formatTime = (seconds) => {
     return m + ':' + String(s).padStart(2, '0');
 };
 
+// --- 実行履歴 ---------------------------------------------------------------
+const HISTORY_KEY = 'logtimer-history';
+const HISTORY_MAX = 50; // 保存する件数の上限（古いものから捨てる）
+
+const loadHistory = () => {
+    try {
+        const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+        return Array.isArray(list) ? list : [];
+    } catch (e) {
+        // 壊れたデータや localStorage が使えない環境では履歴なしとして扱う
+        return [];
+    }
+};
+
+const saveHistory = (list) => {
+    try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    } catch (e) {
+        // 保存できなくてもタイマー自体は動く
+    }
+};
+
+// 履歴の日時表示（M/D HH:MM）
+const formatStamp = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+};
+
 // 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
 const ArrowIcon = ({ up }) => (
     <svg
@@ -104,6 +134,7 @@ const App = () => {
     const [countUp, setCountUp] = useState(false); // false: カウントダウン / true: カウントアップ
     const [muted, setMuted] = useState(false);
     const [installEvent, setInstallEvent] = useState(null);
+    const [history, setHistory] = useState(loadHistory); // 完了した実行の記録（新しい順）
 
     const [phase, setPhase] = useState(PHASE.IDLE);
     const [currentSet, setCurrentSet] = useState(1);
@@ -182,6 +213,27 @@ const App = () => {
         setInstallEvent(null);
     }, [installEvent]);
 
+    // --- 履歴の記録 ----------------------------------------------------------
+    const addHistory = useCallback((s) => {
+        setHistory((prev) => {
+            const next = [{
+                id: Date.now(),
+                at: new Date().toISOString(),
+                prepare: s.prepare,
+                work: s.work,
+                rest: s.rest,
+                sets: s.sets,
+            }, ...prev].slice(0, HISTORY_MAX);
+            saveHistory(next);
+            return next;
+        });
+    }, []);
+
+    const clearHistory = useCallback(() => {
+        setHistory([]);
+        saveHistory([]);
+    }, []);
+
     // --- フェーズ進行 --------------------------------------------------------
     const durationOf = useCallback((p) => {
         if (p === PHASE.PREPARE) return settings.prepare;
@@ -213,6 +265,7 @@ const App = () => {
             setPhase(PHASE.DONE);
             setIsRunning(false);
             setRemaining(0);
+            addHistory(settings); // 最後まで終えた実行だけ履歴に残す
             releaseWakeLock();
             return;
         }
@@ -223,7 +276,7 @@ const App = () => {
         setPhase(next.phase);
         setCurrentSet(next.set);
         setRemaining(d);
-    }, [phase, currentSet, nextOf, durationOf, beep, releaseWakeLock]);
+    }, [phase, currentSet, nextOf, durationOf, beep, releaseWakeLock, addHistory, settings]);
 
     // --- 計時（実時刻ベースなので取りこぼしても遅れない） ----------------------
     useEffect(() => {
@@ -265,24 +318,44 @@ const App = () => {
     }, [isRunning, requestWakeLock]);
 
     // --- 操作 ---------------------------------------------------------------
-    const start = useCallback(() => {
-        if (phase === PHASE.IDLE || phase === PHASE.DONE) {
-            // 最初のフェーズを決める（準備が0秒なら運動から）
-            const first = settings.prepare > 0 ? PHASE.PREPARE : PHASE.WORK;
-            const d = durationOf(first);
-            deadlineRef.current = Date.now() + d * 1000;
-            lastBeepRef.current = null;
-            setPhase(first);
-            setCurrentSet(1);
-            setRemaining(d);
-            beep(first === PHASE.WORK ? 880 : 660, 0.25);
-        } else {
-            // 一時停止からの再開
-            deadlineRef.current = Date.now() + remaining * 1000;
-        }
+    // 指定した設定で最初から開始する（履歴からの再実行でも使う）
+    const startWith = useCallback((s) => {
+        // 最初のフェーズを決める（準備が0秒なら運動から）
+        const first = s.prepare > 0 ? PHASE.PREPARE : PHASE.WORK;
+        const d = first === PHASE.PREPARE ? s.prepare : s.work;
+        deadlineRef.current = Date.now() + d * 1000;
+        lastBeepRef.current = null;
+        setPhase(first);
+        setCurrentSet(1);
+        setRemaining(d);
+        beep(first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
-    }, [phase, settings, durationOf, remaining, beep, requestWakeLock]);
+    }, [beep, requestWakeLock]);
+
+    const start = useCallback(() => {
+        if (phase === PHASE.IDLE || phase === PHASE.DONE) {
+            startWith(settings);
+            return;
+        }
+        // 一時停止からの再開
+        deadlineRef.current = Date.now() + remaining * 1000;
+        setIsRunning(true);
+        requestWakeLock();
+    }, [phase, settings, remaining, startWith, requestWakeLock]);
+
+    // 履歴の行をタップしたとき: その設定を読み込んで即実行する
+    const runAgain = useCallback((entry) => {
+        if (isRunning) return;
+        const s = {
+            prepare: clamp(entry.prepare, LIMITS.prepare.min, LIMITS.prepare.max),
+            work:    clamp(entry.work,    LIMITS.work.min,    LIMITS.work.max),
+            rest:    clamp(entry.rest,    LIMITS.rest.min,    LIMITS.rest.max),
+            sets:    clamp(entry.sets,    LIMITS.sets.min,    LIMITS.sets.max),
+        };
+        setSettings(s);
+        startWith(s);
+    }, [isRunning, startWith]);
 
     const pause = useCallback(() => {
         setRemaining(Math.max(0, (deadlineRef.current - Date.now()) / 1000));
@@ -338,7 +411,7 @@ const App = () => {
 
     return (
         <div
-            className={'min-h-[100dvh] transition-colors duration-500 text-white ' + style.bg}
+            className={'h-[100dvh] flex flex-col overflow-hidden transition-colors duration-500 text-white ' + style.bg}
             style={{
                 paddingTop: 'env(safe-area-inset-top)',
                 paddingBottom: 'env(safe-area-inset-bottom)',
@@ -346,9 +419,9 @@ const App = () => {
                 paddingRight: 'env(safe-area-inset-right)',
             }}
         >
-            <div className="max-w-md mx-auto px-4 py-3 flex flex-col gap-3">
+            <div className="w-full max-w-md mx-auto px-4 py-3 flex-1 min-h-0 flex flex-col gap-3">
 
-                <header className="flex items-center justify-between gap-2">
+                <header className="shrink-0 flex items-center justify-between gap-2">
                     <h1 className="text-lg font-bold tracking-wide">logTimer</h1>
                     <div className="flex items-center gap-2">
                         {installEvent && (
@@ -368,7 +441,7 @@ const App = () => {
                 </header>
 
                 {/* 左: タイマー本体 / 右: 操作ボタン */}
-                <div className="flex items-center gap-3">
+                <div className="shrink-0 flex items-center gap-3">
                     <div className="relative shrink-0" style={{ width: DIAL_SIZE, height: DIAL_SIZE }}>
                         <svg viewBox="0 0 300 300" className="-rotate-90 w-full h-full">
                             <circle cx="150" cy="150" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
@@ -432,7 +505,7 @@ const App = () => {
                 </div>
 
                 {/* 設定 */}
-                <div className="rounded-2xl bg-black/20 px-4 py-3">
+                <div className="shrink-0 rounded-2xl bg-black/20 px-4 py-3">
                     <div className="flex items-baseline justify-between mb-1">
                         <div className="text-sm text-white/80">設定</div>
                         <div className="text-xs text-white/60">
@@ -454,10 +527,54 @@ const App = () => {
                         onClick={() => setSettings(DEFAULTS)}
                         disabled={isRunning}
                         className="mt-2 text-xs text-white/70 underline disabled:opacity-30"
-                    >既定値に戻す（準備10秒 / 運動20秒 / 休憩5秒 / 3回）</button>
+                    >既定値に戻す（10 / 20 / 5 / 3回）</button>
                 </div>
 
-                <p className="hidden sm:block text-xs text-white/50 text-center">
+                {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
+                <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
+                    <div className="flex items-baseline justify-between px-1">
+                        <div className="text-sm text-white/80">履歴</div>
+                        {history.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={clearHistory}
+                                disabled={isRunning}
+                                className="text-xs text-white/60 underline disabled:opacity-30"
+                            >全消去</button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 px-2 pt-1 pb-0.5 text-[10px] text-white/50">
+                        <span className="flex-1 min-w-0">日時</span>
+                        <span className="w-8 text-right">準備</span>
+                        <span className="w-8 text-right">運動</span>
+                        <span className="w-8 text-right">休憩</span>
+                        <span className="w-8 text-right">回数</span>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10">
+                        {history.length === 0 ? (
+                            <p className="text-xs text-white/40 text-center py-4">
+                                最後まで実行すると、ここに記録されます
+                            </p>
+                        ) : history.map((h) => (
+                            <button
+                                key={h.id}
+                                type="button"
+                                onClick={() => runAgain(h)}
+                                disabled={isRunning}
+                                title="タップするとこの設定で実行します"
+                                className="w-full flex items-center gap-2 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
+                            >
+                                <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
+                                <span className="w-8 text-right tabular">{h.prepare}</span>
+                                <span className="w-8 text-right tabular">{h.work}</span>
+                                <span className="w-8 text-right tabular">{h.rest}</span>
+                                <span className="w-8 text-right tabular">{h.sets}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <p className="shrink-0 hidden sm:block text-xs text-white/50 text-center">
                     スペースキー: 開始 / 一時停止　・　R キー: リセット
                 </p>
             </div>
