@@ -1,6 +1,6 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-// 既定値（秒 / 回）
+// 組み込みの既定値（秒 / 回）。利用者が保存した既定値があればそちらを使う
 const DEFAULTS = {
     prepare: 10,  // 準備
     work: 20,     // 運動
@@ -36,6 +36,36 @@ const PHASE_STYLE = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+// --- 既定値の保存 -----------------------------------------------------------
+const DEFAULTS_KEY = 'logtimer-defaults';
+
+// 保存された既定値を読む（無ければ組み込みの既定値）
+const loadDefaults = () => {
+    try {
+        const saved = JSON.parse(localStorage.getItem(DEFAULTS_KEY) || 'null');
+        if (!saved) return DEFAULTS;
+        const pick = (key) => {
+            const n = parseInt(saved[key], 10);
+            return Number.isNaN(n) ? DEFAULTS[key] : clamp(n, LIMITS[key].min, LIMITS[key].max);
+        };
+        return { prepare: pick('prepare'), work: pick('work'), rest: pick('rest'), sets: pick('sets') };
+    } catch (e) {
+        // 壊れたデータや localStorage が使えない環境では組み込みの既定値に戻す
+        return DEFAULTS;
+    }
+};
+
+const saveDefaults = (s) => {
+    try {
+        localStorage.setItem(DEFAULTS_KEY, JSON.stringify(s));
+    } catch (e) {
+        // 保存できなくてもタイマー自体は動く
+    }
+};
+
+// 起動時の設定
+const INITIAL = loadDefaults();
+
 // 秒数を表示用文字列にする（60秒以上は m:ss 形式）
 const formatTime = (seconds) => {
     if (seconds < 60) return String(seconds);
@@ -66,12 +96,12 @@ const saveHistory = (list) => {
     }
 };
 
-// 履歴の日時表示（M/D HH:MM）
+// 履歴の日時表示（yyyy/mm/dd hh:mm）
 const formatStamp = (iso) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2, '0');
-    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 };
 
 // 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
@@ -130,7 +160,8 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
 };
 
 const App = () => {
-    const [settings, setSettings] = useState(DEFAULTS);
+    const [settings, setSettings] = useState(INITIAL);
+    const [defaults, setDefaults] = useState(INITIAL); // 「既定値に戻す」で戻る先
     const [countUp, setCountUp] = useState(false); // false: カウントダウン / true: カウントアップ
     const [muted, setMuted] = useState(false);
     const [installEvent, setInstallEvent] = useState(null);
@@ -138,7 +169,7 @@ const App = () => {
 
     const [phase, setPhase] = useState(PHASE.IDLE);
     const [currentSet, setCurrentSet] = useState(1);
-    const [remaining, setRemaining] = useState(DEFAULTS.prepare); // 現フェーズの残り秒（小数を含む）
+    const [remaining, setRemaining] = useState(INITIAL.prepare > 0 ? INITIAL.prepare : INITIAL.work); // 現フェーズの残り秒（小数を含む）
     const [isRunning, setIsRunning] = useState(false);
 
     const deadlineRef = useRef(0);      // 現フェーズの終了時刻（epoch ms）
@@ -233,6 +264,21 @@ const App = () => {
         setHistory([]);
         saveHistory([]);
     }, []);
+
+    // --- 既定値の操作 --------------------------------------------------------
+    // いまの設定を既定値として保存する（次回起動時もこの値で立ち上がる）
+    const saveAsDefaults = useCallback(() => {
+        setDefaults(settings);
+        saveDefaults(settings);
+    }, [settings]);
+
+    const restoreDefaults = useCallback(() => setSettings(defaults), [defaults]);
+
+    // 既定値と同じ設定なら「戻す」「設定」のどちらも押す必要がない
+    const isDefaultSettings = defaults.prepare === settings.prepare
+        && defaults.work === settings.work
+        && defaults.rest === settings.rest
+        && defaults.sets === settings.sets;
 
     // --- フェーズ進行 --------------------------------------------------------
     const durationOf = useCallback((p) => {
@@ -522,12 +568,21 @@ const App = () => {
                         <NumberField label="回数" value={settings.sets} limit={LIMITS.sets} disabled={isRunning}
                             onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => setSettings(DEFAULTS)}
-                        disabled={isRunning}
-                        className="mt-2 text-xs text-white/70 underline disabled:opacity-30"
-                    >既定値に戻す（10 / 20 / 5 / 3回）</button>
+                    <div className="mt-2 flex items-center gap-4 text-xs">
+                        <button
+                            type="button"
+                            onClick={restoreDefaults}
+                            disabled={isRunning || isDefaultSettings}
+                            className="text-white/70 underline disabled:opacity-30"
+                        >既定値に戻す（{defaults.prepare}/{defaults.work}/{defaults.rest}/{defaults.sets}回）</button>
+                        <button
+                            type="button"
+                            onClick={saveAsDefaults}
+                            disabled={isRunning || isDefaultSettings}
+                            className="text-white/70 underline disabled:opacity-30"
+                            title="いまの設定を既定値として保存します"
+                        >既定値に設定</button>
+                    </div>
                 </div>
 
                 {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
