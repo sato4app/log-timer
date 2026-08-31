@@ -124,8 +124,8 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
 
     return (
         <div className="min-w-0 flex flex-col gap-1">
-            <div className="text-xs text-white/70 text-center truncate">
-                {label}<span className="text-white/40">（{limit.unit}）</span>
+            <div className="text-sm text-white/80 text-center truncate">
+                {label}<span className="text-white/40">({limit.unit})</span>
             </div>
             <input
                 type="number"
@@ -551,7 +551,7 @@ const App = () => {
                 </div>
 
                 {/* 設定 */}
-                <div className="shrink-0 rounded-2xl bg-black/20 px-4 py-3">
+                <div className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
                     <div className="flex items-baseline justify-between mb-1">
                         <div className="text-sm text-white/80">設定</div>
                         <div className="text-xs text-white/60">
@@ -598,7 +598,7 @@ const App = () => {
                             >全消去</button>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 px-2 pt-1 pb-0.5 text-[10px] text-white/50">
+                    <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
                         <span className="flex-1 min-w-0">日時</span>
                         <span className="w-8 text-right">準備</span>
                         <span className="w-8 text-right">運動</span>
@@ -617,7 +617,7 @@ const App = () => {
                                 onClick={() => runAgain(h)}
                                 disabled={isRunning}
                                 title="タップするとこの設定で実行します"
-                                className="w-full flex items-center gap-2 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
+                                className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
                             >
                                 <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
                                 <span className="w-8 text-right tabular">{h.prepare}</span>
