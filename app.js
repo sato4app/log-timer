@@ -44,19 +44,32 @@ const formatTime = (seconds) => {
     return m + ':' + String(s).padStart(2, '0');
 };
 
+// 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
+const ArrowIcon = ({ up }) => (
+    <svg
+        width="22" height="22" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+        {up
+            ? <path d="M12 20V4M5 11l7-7 7 7" />
+            : <path d="M12 4v16M5 13l7 7 7-7" />}
+    </svg>
+);
+
 // 設定値の増減フィールド
 const NumberField = ({ label, value, onChange, limit, disabled }) => {
     const step = (delta) => onChange(clamp(value + delta, limit.min, limit.max));
 
     return (
-        <div className="flex items-center justify-between gap-3 py-2">
+        <div className="flex items-center justify-between gap-3 py-1.5">
             <span className="text-sm text-white/80">{label}</span>
             <div className="flex items-center gap-1">
                 <button
                     type="button"
                     onClick={() => step(-1)}
                     disabled={disabled || value <= limit.min}
-                    className="w-9 h-9 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
+                    className="w-9 h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
                     aria-label={label + 'を減らす'}
                 >−</button>
                 <input
@@ -68,14 +81,14 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
                         const n = parseInt(e.target.value, 10);
                         onChange(Number.isNaN(n) ? limit.min : clamp(n, limit.min, limit.max));
                     }}
-                    className="w-16 h-9 rounded-lg bg-white/10 text-white text-center tabular disabled:opacity-40"
+                    className="w-14 h-8 rounded-lg bg-white/10 text-white text-center tabular disabled:opacity-40"
                     aria-label={label}
                 />
                 <button
                     type="button"
                     onClick={() => step(1)}
                     disabled={disabled || value >= limit.max}
-                    className="w-9 h-9 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
+                    className="w-9 h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20"
                     aria-label={label + 'を増やす'}
                 >＋</button>
                 <span className="w-6 text-sm text-white/60">{limit.unit}</span>
@@ -318,10 +331,12 @@ const App = () => {
     const totalSeconds = settings.prepare + settings.sets * settings.work + (settings.sets - 1) * settings.rest;
     const RADIUS = 130;
     const CIRC = 2 * Math.PI * RADIUS;
+    // 円の表示サイズ（元は 300px、約70%に縮小）。狭い画面ではさらに縮める
+    const DIAL_SIZE = 'min(210px, 56vw)';
 
     return (
         <div
-            className={'min-h-screen transition-colors duration-500 text-white ' + style.bg}
+            className={'min-h-[100dvh] transition-colors duration-500 text-white ' + style.bg}
             style={{
                 paddingTop: 'env(safe-area-inset-top)',
                 paddingBottom: 'env(safe-area-inset-bottom)',
@@ -329,93 +344,93 @@ const App = () => {
                 paddingRight: 'env(safe-area-inset-right)',
             }}
         >
-            <div className="max-w-md mx-auto px-4 py-6 flex flex-col gap-5">
+            <div className="max-w-md mx-auto px-4 py-3 flex flex-col gap-3">
 
                 <header className="flex items-center justify-between gap-2">
-                    <h1 className="text-xl font-bold tracking-wide">logTimer</h1>
+                    <h1 className="text-lg font-bold tracking-wide">logTimer</h1>
                     <div className="flex items-center gap-2">
                         {installEvent && (
                             <button
                                 type="button"
                                 onClick={install}
-                                className="text-sm text-white px-3 py-1 rounded-lg bg-white/20"
+                                className="text-xs text-white px-2.5 py-1 rounded-lg bg-white/20"
                             >ホーム画面に追加</button>
                         )}
                         <button
                             type="button"
                             onClick={() => setMuted((m) => !m)}
-                            className="text-sm text-white/70 px-2 py-1 rounded-lg bg-white/10"
+                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
                             aria-label="音のオン・オフ"
                         >{muted ? '音 オフ' : '音 オン'}</button>
                     </div>
                 </header>
 
-                {/* タイマー本体 */}
-                <div className="relative flex items-center justify-center">
-                    <svg width="300" height="300" viewBox="0 0 300 300" className="-rotate-90 max-w-full">
-                        <circle cx="150" cy="150" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
-                        <circle
-                            cx="150" cy="150" r={RADIUS} fill="none"
-                            stroke={style.accent} strokeWidth="14" strokeLinecap="round"
-                            strokeDasharray={CIRC}
-                            strokeDashoffset={CIRC * (1 - progress)}
-                            style={{ transition: 'stroke-dashoffset 120ms linear' }}
-                        />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <div className="text-lg font-medium text-white/80">{style.text}</div>
-                        <div className="text-7xl font-bold tabular leading-none my-1">{formatTime(shownSeconds)}</div>
-                        <div className="text-sm text-white/70">
-                            {phase === PHASE.DONE
-                                ? '全 ' + settings.sets + ' 回 終了'
-                                : currentSet + ' / ' + settings.sets + ' 回目'}
+                {/* 左: タイマー本体 / 右: 操作ボタン */}
+                <div className="flex items-center gap-3">
+                    <div className="relative shrink-0" style={{ width: DIAL_SIZE, height: DIAL_SIZE }}>
+                        <svg viewBox="0 0 300 300" className="-rotate-90 w-full h-full">
+                            <circle cx="150" cy="150" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
+                            <circle
+                                cx="150" cy="150" r={RADIUS} fill="none"
+                                stroke={style.accent} strokeWidth="14" strokeLinecap="round"
+                                strokeDasharray={CIRC}
+                                strokeDashoffset={CIRC * (1 - progress)}
+                                style={{ transition: 'stroke-dashoffset 120ms linear' }}
+                            />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <div className="text-sm font-medium text-white/80">{style.text}</div>
+                            <div className="text-5xl font-bold tabular leading-none my-1">{formatTime(shownSeconds)}</div>
+                            <div className="text-xs text-white/70">
+                                {phase === PHASE.DONE
+                                    ? '全 ' + settings.sets + ' 回 終了'
+                                    : currentSet + ' / ' + settings.sets + ' 回目'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0 flex flex-col gap-2">
+                        <button
+                            type="button"
+                            onClick={toggle}
+                            className="h-14 rounded-2xl bg-white text-slate-900 text-lg font-bold active:scale-95 transition-transform"
+                        >
+                            {isRunning ? '一時停止' : (phase === PHASE.IDLE || phase === PHASE.DONE ? 'スタート' : '再開')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={reset}
+                            className="h-12 rounded-2xl bg-white/15 text-white text-base font-bold active:scale-95 transition-transform"
+                        >
+                            リセット
+                        </button>
+
+                        {/* 表示方法: ↓ カウントダウン / ↑ カウントアップ */}
+                        <div className="grid grid-cols-2 gap-2">
+                            {[
+                                { key: false, label: 'カウントダウン（残り時間）' },
+                                { key: true,  label: 'カウントアップ（経過時間）' },
+                            ].map((opt) => (
+                                <button
+                                    key={String(opt.key)}
+                                    type="button"
+                                    onClick={() => setCountUp(opt.key)}
+                                    title={opt.label}
+                                    aria-label={opt.label}
+                                    aria-pressed={countUp === opt.key}
+                                    className={'h-11 rounded-xl border flex items-center justify-center transition-colors ' + (countUp === opt.key
+                                        ? 'bg-white text-slate-900 border-white'
+                                        : 'bg-white/5 text-white/80 border-white/20')}
+                                >
+                                    <ArrowIcon up={opt.key} />
+                                </button>
+                            ))}
                         </div>
                     </div>
                 </div>
 
-                {/* 操作ボタン */}
-                <div className="flex gap-3">
-                    <button
-                        type="button"
-                        onClick={toggle}
-                        className="flex-1 h-14 rounded-2xl bg-white text-slate-900 text-lg font-bold active:scale-95 transition-transform"
-                    >
-                        {isRunning ? '一時停止' : (phase === PHASE.IDLE || phase === PHASE.DONE ? 'スタート' : '再開')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={reset}
-                        className="w-28 h-14 rounded-2xl bg-white/15 text-white text-lg font-bold active:scale-95 transition-transform"
-                    >
-                        リセット
-                    </button>
-                </div>
-
-                {/* 表示方法 */}
-                <div className="rounded-2xl bg-black/20 p-4">
-                    <div className="text-sm text-white/80 mb-2">表示方法</div>
-                    <div className="grid grid-cols-2 gap-2">
-                        {[
-                            { key: false, label: 'カウントダウン', hint: '残り時間' },
-                            { key: true,  label: 'カウントアップ', hint: '経過時間' },
-                        ].map((opt) => (
-                            <button
-                                key={String(opt.key)}
-                                type="button"
-                                onClick={() => setCountUp(opt.key)}
-                                className={'h-14 rounded-xl border transition-colors ' + (countUp === opt.key
-                                    ? 'bg-white text-slate-900 border-white font-bold'
-                                    : 'bg-white/5 text-white/80 border-white/20')}
-                            >
-                                <div className="text-sm">{opt.label}</div>
-                                <div className="text-xs opacity-70">{opt.hint}</div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
                 {/* 設定 */}
-                <div className="rounded-2xl bg-black/20 p-4">
+                <div className="rounded-2xl bg-black/20 px-4 py-3">
                     <div className="flex items-baseline justify-between mb-1">
                         <div className="text-sm text-white/80">設定</div>
                         <div className="text-xs text-white/60">
@@ -436,11 +451,11 @@ const App = () => {
                         type="button"
                         onClick={() => setSettings(DEFAULTS)}
                         disabled={isRunning}
-                        className="mt-3 text-xs text-white/70 underline disabled:opacity-30"
+                        className="mt-2 text-xs text-white/70 underline disabled:opacity-30"
                     >既定値に戻す（準備10秒 / 運動20秒 / 休憩5秒 / 3回）</button>
                 </div>
 
-                <p className="text-xs text-white/50 text-center">
+                <p className="hidden sm:block text-xs text-white/50 text-center">
                     スペースキー: 開始 / 一時停止　・　R キー: リセット
                 </p>
             </div>
