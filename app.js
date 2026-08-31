@@ -68,6 +68,13 @@ const saveSoundMode = (mode) => {
     }
 };
 
+// 読み上げの速さ（1.0 が標準。少し速めにして秒読みに食い込まないようにする）
+const SPEECH_RATE = 1.15;
+
+// 読み上げに掛かる時間の見込み（ミリ秒）。
+// 読み終わりは onend で拾うが、それが来ないブラウザでも秒読みが止まらないようにする保険
+const estimateSpeechMs = (text) => 400 + text.length * 130;
+
 // フェーズ切り替えの読み上げ文（運動だけは何回目かを添える）
 const speechFor = (phase, set) => (phase === PHASE.WORK ? '運動 ' + set + ' 回目' : phase);
 
@@ -261,6 +268,8 @@ const App = () => {
     const deadlineRef = useRef(0);      // 現フェーズの終了時刻（epoch ms）
     const audioCtxRef = useRef(null);
     const lastCueRef = useRef(null);    // 秒読みの二重再生防止
+    const speechHoldRef = useRef(0);    // フェーズ名を言い終える時刻（epoch ms）。それまで秒読みを待たせる
+    const speechIdRef = useRef(0);      // 読み上げの世代。古い onend で待ちを解除しないため
     const wakeLockRef = useRef(null);
 
     // --- 音 -----------------------------------------------------------------
@@ -290,14 +299,18 @@ const App = () => {
     }, []);
 
     // 読み上げ（端末内蔵の音声を使うのでファイル追加なし・オフラインでも鳴る）
-    const speak = useCallback((text, rate = 1.15) => {
+    const speak = useCallback((text, onEnd) => {
         try {
             const synth = window.speechSynthesis;
-            // 前の読み上げが残っていると秒読みが遅れるので割り込む
+            // 前の読み上げが残っていると次が遅れるので割り込む
             if (synth.speaking || synth.pending) synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'ja-JP';
-            utterance.rate = rate;
+            utterance.rate = SPEECH_RATE;
+            if (onEnd) {
+                utterance.onend = onEnd;
+                utterance.onerror = onEnd;
+            }
             synth.speak(utterance);
         } catch (e) {
             // 読み上げできない環境でもタイマー自体は動かす
@@ -305,6 +318,7 @@ const App = () => {
     }, []);
 
     const stopSpeaking = useCallback(() => {
+        speechHoldRef.current = 0;
         try {
             if (CAN_SPEAK) window.speechSynthesis.cancel();
         } catch (e) {
@@ -312,10 +326,29 @@ const App = () => {
         }
     }, []);
 
-    // 合図をひとつ鳴らす（選ばれている方式で）
-    const notify = useCallback((text, frequency, duration) => {
-        if (soundMode === SOUND.VOICE) speak(text);
-        else if (soundMode === SOUND.BEEP) beep(frequency, duration);
+    // フェーズの切り替えを知らせる。読み上げの場合は言い終わるまで秒読みを待たせる
+    const announce = useCallback((text, frequency, duration) => {
+        if (soundMode === SOUND.VOICE) {
+            const id = ++speechIdRef.current;
+            speechHoldRef.current = Date.now() + estimateSpeechMs(text);
+            // 見込みより早く言い終わったら、その時点で秒読みを解禁する
+            speak(text, () => {
+                if (speechIdRef.current === id) speechHoldRef.current = 0;
+            });
+        } else if (soundMode === SOUND.BEEP) {
+            beep(frequency, duration);
+        }
+    }, [soundMode, speak, beep]);
+
+    // 秒読みをひとつ鳴らす。フェーズ名を言い終えていなければ見送る（false を返す）
+    const countdown = useCallback((sec, frequency, duration) => {
+        if (soundMode === SOUND.VOICE) {
+            if (Date.now() < speechHoldRef.current) return false;
+            speak(String(sec));
+        } else if (soundMode === SOUND.BEEP) {
+            beep(frequency, duration);
+        }
+        return true;
     }, [soundMode, speak, beep]);
 
     // 音声 → 電子音 → オフ の順に切り替える（選んだ方式は次回の起動時も引き継ぐ）
@@ -429,7 +462,7 @@ const App = () => {
         lastCueRef.current = null;
 
         if (next.phase === PHASE.DONE) {
-            notify('終了。お疲れさまでした', 1046, 0.35);
+            announce('終了。お疲れさまでした', 1046, 0.35);
             // 電子音のときだけ2音目を重ねる（読み上げは文で終わりを伝えられる）
             if (soundMode === SOUND.BEEP) setTimeout(() => beep(1318, 0.5), 200);
             setPhase(PHASE.DONE);
@@ -440,13 +473,13 @@ const App = () => {
             return;
         }
 
-        notify(speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
+        announce(speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
         const d = durationOf(next.phase);
         deadlineRef.current = Date.now() + d * 1000;
         setPhase(next.phase);
         setCurrentSet(next.set);
         setRemaining(d);
-    }, [phase, currentSet, nextOf, durationOf, notify, soundMode, beep, releaseWakeLock, addHistory, settings]);
+    }, [phase, currentSet, nextOf, durationOf, announce, soundMode, beep, releaseWakeLock, addHistory, settings]);
 
     // --- 計時（実時刻ベースなので取りこぼしても遅れない） ----------------------
     useEffect(() => {
@@ -459,17 +492,17 @@ const App = () => {
                 return;
             }
             setRemaining(rest);
-            // 残り3秒からの秒読み
+            // 残り3秒からの秒読み。
+            // フェーズ名の読み上げ中は見送り、言い終わってからその時点の秒で再開する
             const sec = Math.ceil(rest);
-            if (sec <= 3 && lastCueRef.current !== sec) {
+            if (sec <= 3 && lastCueRef.current !== sec && countdown(sec, 784, 0.1)) {
                 lastCueRef.current = sec;
-                notify(String(sec), 784, 0.1);
             }
         };
 
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
-    }, [isRunning, advance, notify]);
+    }, [isRunning, advance, countdown]);
 
     // 待機中は設定変更を残り時間に反映する
     useEffect(() => {
@@ -499,10 +532,10 @@ const App = () => {
         setCurrentSet(1);
         setRemaining(d);
         // iOS は利用者の操作を起点にしないと読み上げが始まらないので、ここが最初の一声になる
-        notify(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
+        announce(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
-    }, [notify, requestWakeLock]);
+    }, [announce, requestWakeLock]);
 
     const start = useCallback(() => {
         if (phase === PHASE.IDLE || phase === PHASE.DONE) {
