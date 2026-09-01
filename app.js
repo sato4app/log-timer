@@ -152,6 +152,9 @@ const formatStamp = (iso) => {
     return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 };
 
+// このページのURL（QRコードにして別の端末で開いてもらうのに使う）
+const PAGE_URL = window.location.href;
+
 // --- 更新の確認 -------------------------------------------------------------
 // 版数は service-worker.js の CACHE_NAME だけで決まる。
 // 端末側の版は受け持ちの Service Worker に聞き、サーバー側の版は service-worker.js を読んで見比べる
@@ -336,6 +339,7 @@ const App = () => {
     const [soundMode, setSoundMode] = useState(loadSoundMode); // 音声 / 電子音 / オフ
     const [installEvent, setInstallEvent] = useState(null);
     const [updateMessage, setUpdateMessage] = useState(null); // 更新確認の結果表示（null は非表示）
+    const [qrCode, setQrCode] = useState(null); // 表示中のQRコード { path, size }（null は非表示）
     const [history, setHistory] = useState(loadHistory); // 完了した実行の記録（新しい順）
     const [showCalendar, setShowCalendar] = useState(false); // 履歴一覧と日別カレンダーの切り替え
     const [calMonth, setCalMonth] = useState(() => {
@@ -529,6 +533,30 @@ const App = () => {
         await installEvent.userChoice;
         setInstallEvent(null);
     }, [installEvent]);
+
+    // --- QRコード ------------------------------------------------------------
+    // このページのURLをQRコードにして見せる（別の端末のカメラで読み取って開いてもらう）
+    const openQr = useCallback(() => {
+        try {
+            const code = window.qrcode(0, 'M'); // 0 = 文字数に合わせて大きさを自動で決める
+            code.addData(PAGE_URL);
+            code.make();
+            const count = code.getModuleCount();
+            const margin = 2; // 読み取りやすいよう周囲に余白を取る（単位はマス）
+            // 黒いマスをまとめて1本の線に。SVGなので拡大しても粗くならない
+            let path = '';
+            for (let row = 0; row < count; row++) {
+                for (let col = 0; col < count; col++) {
+                    if (code.isDark(row, col)) {
+                        path += 'M' + (col + margin) + ',' + (row + margin) + 'h1v1h-1z';
+                    }
+                }
+            }
+            setQrCode({ path, size: count + margin * 2 });
+        } catch (e) {
+            setQrCode({ path: '', size: 0 }); // 作れないときはURLの文字だけ見せる
+        }
+    }, []);
 
     // --- 更新の確認 ----------------------------------------------------------
     // 起動した時点の版を控えておく。
@@ -783,6 +811,11 @@ const App = () => {
     useEffect(() => {
         const onKeyDown = (e) => {
             if (e.target.tagName === 'INPUT') return;
+            // QRコードを開いている間は、閉じる操作だけ受け付ける
+            if (qrCode) {
+                if (e.key === 'Escape') setQrCode(null);
+                return;
+            }
             if (e.code === 'Space') {
                 e.preventDefault();
                 toggle();
@@ -792,7 +825,7 @@ const App = () => {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [toggle, reset]);
+    }, [toggle, reset, qrCode]);
 
     // --- 表示用の値 ----------------------------------------------------------
     const style = PHASE_STYLE[phase];
@@ -869,6 +902,12 @@ const App = () => {
                             className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
                             aria-label="音の鳴らし方の切り替え（音声 / 電子音 / オフ）"
                         >{SOUND_LABEL[soundMode]}</button>
+                        <button
+                            type="button"
+                            onClick={openQr}
+                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
+                            aria-label="このページのQRコードを表示"
+                        >QR</button>
                     </div>
                 </header>
 
@@ -1107,6 +1146,37 @@ const App = () => {
                     スペースキー: 開始 / 一時停止　・　R キー: リセット
                 </p>
             </div>
+
+            {/* QRコード。どこをタップしても閉じる */}
+            {qrCode && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+                    onClick={() => setQrCode(null)}
+                >
+                    <div className="flex flex-col items-center gap-3 rounded-2xl bg-white p-4 text-slate-700">
+                        {qrCode.path ? (
+                            <svg
+                                viewBox={'0 0 ' + qrCode.size + ' ' + qrCode.size}
+                                className="w-[240px] max-w-[70vw] h-auto"
+                                shapeRendering="crispEdges"
+                                role="img"
+                                aria-label="このページのQRコード"
+                            >
+                                <rect width={qrCode.size} height={qrCode.size} fill="#ffffff" />
+                                <path d={qrCode.path} fill="#000000" />
+                            </svg>
+                        ) : (
+                            <p className="text-sm">QRコードを作れませんでした</p>
+                        )}
+                        <p className="max-w-[240px] break-all text-center text-xs">{PAGE_URL}</p>
+                        <button
+                            type="button"
+                            onClick={() => setQrCode(null)}
+                            className="rounded-lg bg-slate-200 px-4 py-1.5 text-sm"
+                        >閉じる</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
