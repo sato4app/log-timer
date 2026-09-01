@@ -377,11 +377,12 @@ const App = () => {
     }, []);
 
     // 読み上げ（端末内蔵の音声を使うのでファイル追加なし・オフラインでも鳴る）
-    const speak = useCallback((text, onEnd) => {
+    // queue を立てると、前の読み上げを止めずに続けて読む（最後の数字とフェーズ名をつなげるため）
+    const speak = useCallback((text, onEnd, queue) => {
         try {
             const synth = window.speechSynthesis;
             // 前の読み上げが残っていると次が遅れるので割り込む
-            if (synth.speaking || synth.pending) synth.cancel();
+            if (!queue && (synth.speaking || synth.pending)) synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'ja-JP';
             utterance.rate = SPEECH_RATE;
@@ -404,18 +405,26 @@ const App = () => {
         }
     }, []);
 
-    // フェーズごとの鳴らし方。読み上げるのは運動（と終了）だけで、
-    // 準備と休憩は「音声」設定でも電子音で知らせる
-    const modeFor = useCallback((p) => (
-        soundMode === SOUND.VOICE && (p === PHASE.PREPARE || p === PHASE.REST) ? SOUND.BEEP : soundMode
+    // 秒読みの鳴らし方。数字を読み上げるのは運動のときだけで、
+    // 準備と休憩は「音声」設定でも電子音で知らせる（フェーズ名の読み上げはどのフェーズでも行う）
+    const cueModeFor = useCallback((p) => (
+        soundMode === SOUND.VOICE && p !== PHASE.WORK ? SOUND.BEEP : soundMode
     ), [soundMode]);
 
-    // iOS は利用者の操作を起点にしないと読み上げが始まらない。
-    // 最初の合図が電子音（準備）になる場合に備えて、操作の中で無音の発話を通しておく
-    const primeSpeech = useCallback(() => {
+    // iOS は利用者の操作を起点にしないと音が出ない。
+    // 「音声」でも準備と休憩の秒読みは電子音なので、操作の中で音の出口を両方とも用意しておく
+    const primeSound = useCallback(() => {
+        try {
+            if (!audioCtxRef.current) {
+                audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        } catch (e) {
+            // 音が出せない環境でもタイマー自体は動かす
+        }
         try {
             if (!CAN_SPEAK) return;
-            const utterance = new SpeechSynthesisUtterance(' ');
+            const utterance = new SpeechSynthesisUtterance(' '); // 無音を1つ通しておく
             utterance.volume = 0;
             window.speechSynthesis.speak(utterance);
         } catch (e) {
@@ -423,24 +432,25 @@ const App = () => {
         }
     }, []);
 
-    // フェーズの切り替えを知らせる。読み上げの場合は言い終わるまで秒読みを待たせる
-    const announce = useCallback((p, text, frequency, duration) => {
-        const mode = modeFor(p);
-        if (mode === SOUND.VOICE) {
+    // フェーズの切り替えを知らせる。読み上げの場合は言い終わるまで秒読みを待たせる。
+    // after は直前に読み上げている文字列（最後の数字）。渡すと、それを読み終えてから続けて読む
+    const announce = useCallback((text, frequency, duration, after) => {
+        if (soundMode === SOUND.VOICE) {
             const id = ++speechIdRef.current;
-            speechHoldRef.current = Date.now() + estimateSpeechMs(text);
+            // 待たせる時間は「前の読み上げ＋自分の読み上げ」の見込み
+            speechHoldRef.current = Date.now() + estimateSpeechMs(text) + (after ? estimateSpeechMs(after) : 0);
             // 見込みより早く言い終わったら、その時点で秒読みを解禁する
             speak(text, () => {
                 if (speechIdRef.current === id) speechHoldRef.current = 0;
-            });
-        } else if (mode === SOUND.BEEP) {
+            }, Boolean(after));
+        } else if (soundMode === SOUND.BEEP) {
             beep(frequency, duration);
         }
-    }, [modeFor, speak, beep]);
+    }, [soundMode, speak, beep]);
 
     // 秒読みをひとつ鳴らす。フェーズ名を言い終えていなければ見送る（false を返す）
     const countdown = useCallback((p, sec, frequency, duration) => {
-        const mode = modeFor(p);
+        const mode = cueModeFor(p);
         if (mode === SOUND.VOICE) {
             if (Date.now() < speechHoldRef.current) return false;
             speak(String(sec));
@@ -448,16 +458,16 @@ const App = () => {
             beep(frequency, duration);
         }
         return true;
-    }, [modeFor, speak, beep]);
+    }, [cueModeFor, speak, beep]);
 
     // 音声 → 電子音 → オフ の順に切り替える（選んだ方式は次回の起動時も引き継ぐ）
     const cycleSound = useCallback(() => {
         const next = SOUND_ORDER[(SOUND_ORDER.indexOf(soundMode) + 1) % SOUND_ORDER.length];
-        if (next === SOUND.VOICE) primeSpeech();
-        else stopSpeaking();
+        if (next !== SOUND.VOICE) stopSpeaking(); // 読み上げ中なら止める
+        if (next !== SOUND.OFF) primeSound();     // 次の音を出せるようにしておく（iOS 対策）
         saveSoundMode(next);
         setSoundMode(next);
-    }, [soundMode, stopSpeaking, primeSpeech]);
+    }, [soundMode, stopSpeaking, primeSound]);
 
     // --- 画面スリープ防止 ----------------------------------------------------
     const requestWakeLock = useCallback(async () => {
@@ -597,7 +607,8 @@ const App = () => {
         return { phase: PHASE.DONE, set: s };
     }, [settings]);
 
-    const advance = useCallback(() => {
+    // after: フェーズの終わりに読み上げた最後の数字（読み上げていなければ null）
+    const advance = useCallback((after) => {
         // 0秒に設定されたフェーズは読み飛ばす
         let next = nextOf(phase, currentSet);
         while (next.phase !== PHASE.DONE && durationOf(next.phase) <= 0) {
@@ -607,7 +618,7 @@ const App = () => {
         lastCueRef.current = null;
 
         if (next.phase === PHASE.DONE) {
-            announce(PHASE.DONE, '終了。お疲れさまでした', 1046, 0.35);
+            announce('終了。お疲れさまでした', 1046, 0.35, after);
             // 電子音のときだけ2音目を重ねる（読み上げは文で終わりを伝えられる）
             if (soundMode === SOUND.BEEP) setTimeout(() => beep(1318, 0.5), 200);
             setPhase(PHASE.DONE);
@@ -618,7 +629,7 @@ const App = () => {
             return;
         }
 
-        announce(next.phase, speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
+        announce(speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25, after);
         const d = durationOf(next.phase);
         deadlineRef.current = Date.now() + d * 1000;
         setPhase(next.phase);
@@ -630,24 +641,29 @@ const App = () => {
     useEffect(() => {
         if (!isRunning) return;
 
-        // 読み上げる数字は画面の数字に合わせる（読み上げるのは運動のときだけ）。
-        // カウントダウン表示: 残り3秒から 3・2・1 と減らす
-        // カウントアップ表示: 経過3秒からフェーズの終わりまで 3・4・5… と増やす
-        // （電子音は数字を読まないので、どちらの表示でも終了3秒前の合図のままにする）
-        const cueUp = countUp && modeFor(phase) === SOUND.VOICE;
+        // 運動は最初から最後まで毎秒読み上げる。数字は画面の数字に合わせる
+        // （運動20秒なら、カウントダウン表示は 20・19…1・0、カウントアップ表示は 1・2…19・20）。
+        // 準備と休憩は数字を読まないので、どちらの表示でも終了3秒前の電子音だけにする
+        const readsNumbers = cueModeFor(phase) === SOUND.VOICE;
+        const cueUp = readsNumbers && countUp;
         const duration = durationOf(phase);
 
         const tick = () => {
             const rest = (deadlineRef.current - Date.now()) / 1000;
             if (rest <= 0) {
-                advance();
+                // 最後の数字まで読み上げる（カウントダウンなら 0、カウントアップならフェーズの秒数）。
+                // 読み上げたときは、次のフェーズ名がそれを言い終えるのを待ってから始まる
+                const last = cueUp ? duration : 0;
+                const spoke = readsNumbers && countdown(phase, last, 784, 0.1);
+                advance(spoke ? String(last) : null);
                 return;
             }
             setRemaining(rest);
             // 秒読み。
             // フェーズ名の読み上げ中は見送り、言い終わってからその時点の秒で再開する
             const sec = cueUp ? Math.floor(duration - rest) : Math.ceil(rest);
-            const due = cueUp ? sec >= 3 : sec <= 3;
+            // 読み上げるフェーズは全区間（カウントアップの 0 は読まない）。それ以外は残り3秒から
+            const due = readsNumbers ? sec >= 1 : sec <= 3;
             if (due && lastCueRef.current !== sec && countdown(phase, sec, 784, 0.1)) {
                 lastCueRef.current = sec;
             }
@@ -655,7 +671,7 @@ const App = () => {
 
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
-    }, [isRunning, advance, countdown, countUp, modeFor, phase, durationOf]);
+    }, [isRunning, advance, countdown, countUp, cueModeFor, phase, durationOf]);
 
     // 秒読みの向きが変わったら、直前に鳴らした秒の記録は捨てる（切り替え直後の1回が飛ばないように）
     useEffect(() => {
@@ -689,12 +705,12 @@ const App = () => {
         setPhase(first);
         setCurrentSet(1);
         setRemaining(d);
-        // 最初が準備だと合図は電子音になるので、読み上げはこの操作の中で通しておく（iOS 対策）
-        if (soundMode === SOUND.VOICE && modeFor(first) !== SOUND.VOICE) primeSpeech();
-        announce(first, speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
+        // iOS は利用者の操作を起点にしないと音が出ないので、この操作の中で用意しておく
+        if (soundMode !== SOUND.OFF) primeSound();
+        announce(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
-    }, [announce, requestWakeLock, soundMode, modeFor, primeSpeech]);
+    }, [announce, requestWakeLock, soundMode, primeSound]);
 
     const start = useCallback(() => {
         if (phase === PHASE.IDLE || phase === PHASE.DONE) {
