@@ -882,7 +882,7 @@ const App = () => {
                                 className="active:opacity-60"
                                 aria-label="更新を確認する"
                                 title="タップで更新を確認"
-                            >logTimer</button>
+                            >log-timer</button>
                         </h1>
                         {updateMessage && (
                             <span className="text-xs text-white/60 truncate">{updateMessage}</span>

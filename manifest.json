@@ -1,6 +1,6 @@
 {
-  "name": "logTimer - 運動タイマー",
-  "short_name": "logTimer",
+  "name": "log-timer - 運動タイマー",
+  "short_name": "log-timer",
   "description": "準備・運動・休憩・回数を設定できるインターバルタイマー",
   "start_url": "./",
   "scope": "./",
