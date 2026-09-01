@@ -75,6 +75,12 @@ const SPEECH_RATE = 1.15;
 // 読み終わりは onend で拾うが、それが来ないブラウザでも秒読みが止まらないようにする保険
 const estimateSpeechMs = (text) => 400 + text.length * 130;
 
+// 秒読みの電子音。最後のひと鳴らし（カウントダウンの0）だけトーンを高く・長くして区切りが分かるようにする
+const CUE_HZ = 784;
+const LAST_CUE_HZ = 1175;
+const LAST_CUE_SEC = 0.25;
+const LAST_CUE_MS = 250; // 次のフェーズの合図はこれだけ遅らせて、最後のひと鳴らしと重ねない
+
 // フェーズ切り替えの読み上げ文（運動だけは何回目かを添える）
 const speechFor = (phase, set) => (phase === PHASE.WORK ? '運動 ' + set + ' 回目' : phase);
 
@@ -358,19 +364,26 @@ const App = () => {
                 audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
             }
             const ctx = audioCtxRef.current;
-            if (ctx.state === 'suspended') ctx.resume();
 
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(frequency, ctx.currentTime);
-            // 末尾のプチッというノイズを避けるため減衰させる
-            gain.gain.setValueAtTime(0.4, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-            osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + duration);
+            const play = () => {
+                const at = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(frequency, at);
+                // 末尾のプチッというノイズを避けるため減衰させる
+                gain.gain.setValueAtTime(0.4, at);
+                gain.gain.exponentialRampToValueAtTime(0.001, at + duration);
+                osc.start(at);
+                osc.stop(at + duration);
+            };
+
+            // 止まっているときは動き出してから鳴らす。
+            // 止まったまま組み立てると、動き出した時にはもう鳴らす時刻を過ぎていて無音になる
+            if (ctx.state === 'running') play();
+            else ctx.resume().then(play).catch(() => {});
         } catch (e) {
             // 音が出せない環境でもタイマー自体は動かす
         }
@@ -411,10 +424,11 @@ const App = () => {
         soundMode === SOUND.VOICE && p !== PHASE.WORK ? SOUND.BEEP : soundMode
     ), [soundMode]);
 
-    // iOS は利用者の操作を起点にしないと音が出ない。
-    // 「音声」でも準備と休憩の秒読みは電子音なので、操作の中で音の出口を両方とも用意しておく
-    const primeSound = useCallback(() => {
+    // iOS は利用者の操作を起点にしないと音が出ないので、操作の中で音の出口を用意しておく
+    const primeSound = useCallback((mode) => {
+        if (mode === SOUND.OFF) return;
         try {
+            // 電子音は「音声」でも使う（準備と休憩の秒読み）ので、どちらでも用意する
             if (!audioCtxRef.current) {
                 audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
             }
@@ -422,6 +436,9 @@ const App = () => {
         } catch (e) {
             // 音が出せない環境でもタイマー自体は動かす
         }
+        // 読み上げの下ごしらえは「音声」のときだけ。
+        // 電子音のときに読み上げを通すと、iOS では音の受け持ちが読み上げ側に移って電子音が鳴らなくなる
+        if (mode !== SOUND.VOICE) return;
         try {
             if (!CAN_SPEAK) return;
             const utterance = new SpeechSynthesisUtterance(' '); // 無音を1つ通しておく
@@ -433,18 +450,21 @@ const App = () => {
     }, []);
 
     // フェーズの切り替えを知らせる。読み上げの場合は言い終わるまで秒読みを待たせる。
-    // after は直前に読み上げている文字列（最後の数字）。渡すと、それを読み終えてから続けて読む
+    // after は直前に鳴らしたフェーズ最後の合図 { text, spoken }。渡すと、それが済んでから知らせる
     const announce = useCallback((text, frequency, duration, after) => {
         if (soundMode === SOUND.VOICE) {
             const id = ++speechIdRef.current;
-            // 待たせる時間は「前の読み上げ＋自分の読み上げ」の見込み
-            speechHoldRef.current = Date.now() + estimateSpeechMs(text) + (after ? estimateSpeechMs(after) : 0);
+            // 最後の数字を読み上げた直後なら、それを読み終えるまでの分も待たせる
+            const wait = after && after.spoken ? estimateSpeechMs(after.text) : 0;
+            speechHoldRef.current = Date.now() + estimateSpeechMs(text) + wait;
             // 見込みより早く言い終わったら、その時点で秒読みを解禁する
             speak(text, () => {
                 if (speechIdRef.current === id) speechHoldRef.current = 0;
-            }, Boolean(after));
+            }, Boolean(wait));
         } else if (soundMode === SOUND.BEEP) {
-            beep(frequency, duration);
+            // 最後のひと鳴らしと重ならないよう、少し置いてから鳴らす
+            if (after) setTimeout(() => beep(frequency, duration), LAST_CUE_MS);
+            else beep(frequency, duration);
         }
     }, [soundMode, speak, beep]);
 
@@ -464,7 +484,7 @@ const App = () => {
     const cycleSound = useCallback(() => {
         const next = SOUND_ORDER[(SOUND_ORDER.indexOf(soundMode) + 1) % SOUND_ORDER.length];
         if (next !== SOUND.VOICE) stopSpeaking(); // 読み上げ中なら止める
-        if (next !== SOUND.OFF) primeSound();     // 次の音を出せるようにしておく（iOS 対策）
+        primeSound(next);                         // 次の音を出せるようにしておく（iOS 対策）
         saveSoundMode(next);
         setSoundMode(next);
     }, [soundMode, stopSpeaking, primeSound]);
@@ -620,7 +640,9 @@ const App = () => {
         if (next.phase === PHASE.DONE) {
             announce('終了。お疲れさまでした', 1046, 0.35, after);
             // 電子音のときだけ2音目を重ねる（読み上げは文で終わりを伝えられる）
-            if (soundMode === SOUND.BEEP) setTimeout(() => beep(1318, 0.5), 200);
+            if (soundMode === SOUND.BEEP) {
+                setTimeout(() => beep(1318, 0.5), (after ? LAST_CUE_MS : 0) + 200);
+            }
             setPhase(PHASE.DONE);
             setIsRunning(false);
             setRemaining(0);
@@ -651,11 +673,12 @@ const App = () => {
         const tick = () => {
             const rest = (deadlineRef.current - Date.now()) / 1000;
             if (rest <= 0) {
-                // 最後の数字まで読み上げる（カウントダウンなら 0、カウントアップならフェーズの秒数）。
-                // 読み上げたときは、次のフェーズ名がそれを言い終えるのを待ってから始まる
+                // フェーズ最後の合図（カウントダウンなら 0、カウントアップならフェーズの秒数）。
+                // 音声は数字を読み上げ、電子音は秒読みと違うトーンで鳴らす。
+                // 鳴らしたときは、次のフェーズの合図をそのぶん待たせる
                 const last = cueUp ? duration : 0;
-                const spoke = readsNumbers && countdown(phase, last, 784, 0.1);
-                advance(spoke ? String(last) : null);
+                const cued = countdown(phase, last, LAST_CUE_HZ, LAST_CUE_SEC);
+                advance(cued ? { text: String(last), spoken: readsNumbers } : null);
                 return;
             }
             setRemaining(rest);
@@ -664,7 +687,7 @@ const App = () => {
             const sec = cueUp ? Math.floor(duration - rest) : Math.ceil(rest);
             // 読み上げるフェーズは全区間（カウントアップの 0 は読まない）。それ以外は残り3秒から
             const due = readsNumbers ? sec >= 1 : sec <= 3;
-            if (due && lastCueRef.current !== sec && countdown(phase, sec, 784, 0.1)) {
+            if (due && lastCueRef.current !== sec && countdown(phase, sec, CUE_HZ, 0.1)) {
                 lastCueRef.current = sec;
             }
         };
@@ -706,7 +729,7 @@ const App = () => {
         setCurrentSet(1);
         setRemaining(d);
         // iOS は利用者の操作を起点にしないと音が出ないので、この操作の中で用意しておく
-        if (soundMode !== SOUND.OFF) primeSound();
+        primeSound(soundMode);
         announce(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
