@@ -219,9 +219,9 @@ const applyUpdate = async () => {
 };
 
 // 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
-const ArrowIcon = ({ up }) => (
+const ArrowIcon = ({ up, size = 22 }) => (
     <svg
-        width="22" height="22" viewBox="0 0 24 24"
+        width={size} height={size} viewBox="0 0 24 24"
         fill="none" stroke="currentColor" strokeWidth="2.5"
         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     >
@@ -585,11 +585,12 @@ const App = () => {
                 work: s.work,
                 rest: s.rest,
                 sets: s.sets,
+                countUp, // そのとき表示していた向き（↑ カウントアップ / ↓ カウントダウン）
             }, ...prev].slice(0, HISTORY_MAX);
             saveHistory(next);
             return next;
         });
-    }, []);
+    }, [countUp]);
 
     const clearHistory = useCallback(() => {
         setHistory([]);
@@ -1066,6 +1067,7 @@ const App = () => {
                         <React.Fragment>
                             <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
                                 <span className="flex-1 min-w-0">日時</span>
+                                <span className="w-4 shrink-0" />{/* 表示方法の矢印。見出しは付けない */}
                                 <span className="w-8 text-right">準備</span>
                                 <span className="w-8 text-right">運動</span>
                                 <span className="w-8 text-right">休憩</span>
@@ -1086,6 +1088,10 @@ const App = () => {
                                         className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
                                     >
                                         <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
+                                        <span className="w-4 shrink-0 flex justify-center text-white/70">
+                                            {/* 古い記録には表示方法が入っていないので、そのときは空欄にする */}
+                                            {typeof h.countUp === 'boolean' && <ArrowIcon up={h.countUp} size={16} />}
+                                        </span>
                                         <span className="w-8 text-right tabular">{h.prepare}</span>
                                         <span className="w-8 text-right tabular">{h.work}</span>
                                         <span className="w-8 text-right tabular">{h.rest}</span>
