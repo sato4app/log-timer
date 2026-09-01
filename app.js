@@ -146,6 +146,72 @@ const formatStamp = (iso) => {
     return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 };
 
+// --- 更新の確認 -------------------------------------------------------------
+// 版数は service-worker.js の CACHE_NAME だけで決まる。
+// 端末側の版は受け持ちの Service Worker に聞き、サーバー側の版は service-worker.js を読んで見比べる
+const CACHE_PREFIX = 'logtimer-';
+
+// 端末に残っているキャッシュの名前（版の削除と、Service Worker に聞けないときの控えに使う）
+const localCacheNames = async () => {
+    try {
+        return (await caches.keys()).filter((n) => n.startsWith(CACHE_PREFIX));
+    } catch (e) {
+        // キャッシュを覗けない環境では「分からない」＝空で返す
+        return [];
+    }
+};
+
+// 受け持ちの Service Worker に版を聞く（返事がなければ null）
+const askWorkerCacheName = () => new Promise((resolve) => {
+    try {
+        const worker = 'serviceWorker' in navigator ? navigator.serviceWorker.controller : null;
+        if (!worker) {
+            resolve(null);
+            return;
+        }
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => resolve(event.data || null);
+        worker.postMessage('cache-name', [channel.port2]);
+        setTimeout(() => resolve(null), 1500); // 返事が来ない版でも待たされないように
+    } catch (e) {
+        resolve(null);
+    }
+});
+
+// 今この端末で動いている版。受け持ちがいなければ、入っているキャッシュの名前から拾う
+const currentCacheName = async () => (await askWorkerCacheName()) || (await localCacheNames())[0] || null;
+
+// サーバーにある版。Service Worker 側でキャッシュを挟まないようにしてあるので毎回ネットワークに聞ける
+const fetchServerCacheName = async () => {
+    const res = await fetch('service-worker.js', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const found = (await res.text()).match(/CACHE_NAME\s*=\s*'([^']+)'/);
+    return found ? found[1] : null;
+};
+
+// 新しい版に入れ替えて読み込み直す
+const applyUpdate = async () => {
+    try {
+        const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+        if (reg) {
+            await reg.update(); // 新しい service-worker.js を取り込む（install でキャッシュも作られる）
+            if (reg.waiting) reg.waiting.postMessage('skip-waiting');
+            // 新しい Service Worker が受け持ちを引き継ぐのを待つ（来なければ3秒で先へ進む）
+            await new Promise((resolve) => {
+                navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+                setTimeout(resolve, 3000);
+            });
+        } else {
+            // Service Worker が使えない環境では、古いキャッシュを消してから読み込み直す
+            const names = await localCacheNames();
+            await Promise.all(names.map((n) => caches.delete(n)));
+        }
+    } catch (e) {
+        // 入れ替えに失敗しても、読み込み直せば新しいファイルが取れることがある
+    }
+    window.location.reload();
+};
+
 // 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
 const ArrowIcon = ({ up }) => (
     <svg
@@ -207,8 +273,17 @@ const monthCells = (year, month) => {
 
 // 設定値の増減フィールド（4項目を横に並べるため縦積みの1枠にまとめる）
 const NumberField = ({ label, value, onChange, limit, disabled }) => {
+    // 編集中の入力文字列。null は非編集（value をそのまま表示）
+    const [draft, setDraft] = useState(null);
     const step = (delta) => onChange(clamp(value + delta, limit.min, limit.max));
     const btn = 'h-8 rounded-lg bg-white/10 text-white text-lg leading-none disabled:opacity-30 active:bg-white/20';
+
+    // 編集を終えたときに確定する。空欄のままなら元の値に戻す
+    const commit = () => {
+        const n = parseInt(draft, 10);
+        if (!Number.isNaN(n)) onChange(clamp(n, limit.min, limit.max));
+        setDraft(null);
+    };
 
     return (
         <div className="min-w-0 flex flex-col gap-1">
@@ -218,13 +293,14 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
             <input
                 type="number"
                 inputMode="numeric"
-                value={value}
+                value={draft === null ? value : draft}
                 disabled={disabled}
-                onChange={(e) => {
-                    const n = parseInt(e.target.value, 10);
-                    onChange(Number.isNaN(n) ? limit.min : clamp(n, limit.min, limit.max));
-                }}
-                className="w-full h-9 rounded-lg bg-white/10 text-white text-center tabular disabled:opacity-40"
+                onFocus={() => setDraft('')}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                placeholder={String(value)}
+                className="w-full h-9 rounded-lg bg-white/10 text-white text-center tabular placeholder:text-white/30 disabled:opacity-40"
                 aria-label={label}
             />
             <div className="grid grid-cols-2 gap-1">
@@ -253,6 +329,7 @@ const App = () => {
     const [countUp, setCountUp] = useState(false); // false: カウントダウン / true: カウントアップ
     const [soundMode, setSoundMode] = useState(loadSoundMode); // 音声 / 電子音 / オフ
     const [installEvent, setInstallEvent] = useState(null);
+    const [updateMessage, setUpdateMessage] = useState(null); // 更新確認の結果表示（null は非表示）
     const [history, setHistory] = useState(loadHistory); // 完了した実行の記録（新しい順）
     const [showCalendar, setShowCalendar] = useState(false); // 履歴一覧と日別カレンダーの切り替え
     const [calMonth, setCalMonth] = useState(() => {
@@ -271,6 +348,7 @@ const App = () => {
     const speechHoldRef = useRef(0);    // フェーズ名を言い終える時刻（epoch ms）。それまで秒読みを待たせる
     const speechIdRef = useRef(0);      // 読み上げの世代。古い onend で待ちを解除しないため
     const wakeLockRef = useRef(null);
+    const localVersionRef = useRef(null); // 起動した時点で端末に入っていた版
 
     // --- 音 -----------------------------------------------------------------
     // 電子音（Web Audio API のサイン波）
@@ -326,38 +404,60 @@ const App = () => {
         }
     }, []);
 
+    // フェーズごとの鳴らし方。読み上げるのは運動（と終了）だけで、
+    // 準備と休憩は「音声」設定でも電子音で知らせる
+    const modeFor = useCallback((p) => (
+        soundMode === SOUND.VOICE && (p === PHASE.PREPARE || p === PHASE.REST) ? SOUND.BEEP : soundMode
+    ), [soundMode]);
+
+    // iOS は利用者の操作を起点にしないと読み上げが始まらない。
+    // 最初の合図が電子音（準備）になる場合に備えて、操作の中で無音の発話を通しておく
+    const primeSpeech = useCallback(() => {
+        try {
+            if (!CAN_SPEAK) return;
+            const utterance = new SpeechSynthesisUtterance(' ');
+            utterance.volume = 0;
+            window.speechSynthesis.speak(utterance);
+        } catch (e) {
+            // 読み上げできない環境でもタイマー自体は動かす
+        }
+    }, []);
+
     // フェーズの切り替えを知らせる。読み上げの場合は言い終わるまで秒読みを待たせる
-    const announce = useCallback((text, frequency, duration) => {
-        if (soundMode === SOUND.VOICE) {
+    const announce = useCallback((p, text, frequency, duration) => {
+        const mode = modeFor(p);
+        if (mode === SOUND.VOICE) {
             const id = ++speechIdRef.current;
             speechHoldRef.current = Date.now() + estimateSpeechMs(text);
             // 見込みより早く言い終わったら、その時点で秒読みを解禁する
             speak(text, () => {
                 if (speechIdRef.current === id) speechHoldRef.current = 0;
             });
-        } else if (soundMode === SOUND.BEEP) {
+        } else if (mode === SOUND.BEEP) {
             beep(frequency, duration);
         }
-    }, [soundMode, speak, beep]);
+    }, [modeFor, speak, beep]);
 
     // 秒読みをひとつ鳴らす。フェーズ名を言い終えていなければ見送る（false を返す）
-    const countdown = useCallback((sec, frequency, duration) => {
-        if (soundMode === SOUND.VOICE) {
+    const countdown = useCallback((p, sec, frequency, duration) => {
+        const mode = modeFor(p);
+        if (mode === SOUND.VOICE) {
             if (Date.now() < speechHoldRef.current) return false;
             speak(String(sec));
-        } else if (soundMode === SOUND.BEEP) {
+        } else if (mode === SOUND.BEEP) {
             beep(frequency, duration);
         }
         return true;
-    }, [soundMode, speak, beep]);
+    }, [modeFor, speak, beep]);
 
     // 音声 → 電子音 → オフ の順に切り替える（選んだ方式は次回の起動時も引き継ぐ）
     const cycleSound = useCallback(() => {
         const next = SOUND_ORDER[(SOUND_ORDER.indexOf(soundMode) + 1) % SOUND_ORDER.length];
-        if (next !== SOUND.VOICE) stopSpeaking();
+        if (next === SOUND.VOICE) primeSpeech();
+        else stopSpeaking();
         saveSoundMode(next);
         setSoundMode(next);
-    }, [soundMode, stopSpeaking]);
+    }, [soundMode, stopSpeaking, primeSpeech]);
 
     // --- 画面スリープ防止 ----------------------------------------------------
     const requestWakeLock = useCallback(async () => {
@@ -399,6 +499,51 @@ const App = () => {
         await installEvent.userChoice;
         setInstallEvent(null);
     }, [installEvent]);
+
+    // --- 更新の確認 ----------------------------------------------------------
+    // 起動した時点の版を控えておく。
+    // あとでブラウザが裏で Service Worker だけ入れ替えても、今動いている版が分かるようにするため
+    useEffect(() => {
+        currentCacheName().then((name) => {
+            localVersionRef.current = name;
+        });
+    }, []);
+
+    // タイトルをタップしたとき: サーバーの版と見比べて、違っていれば入れ替えて読み込み直す
+    const checkUpdate = useCallback(async () => {
+        if (updateMessage && updateMessage.endsWith('…')) return; // 確認中の二度押しは無視する
+        // 読み込み直すと実行中の記録が消えるので、走らせている間は見送る
+        if (isRunning) {
+            setUpdateMessage('実行中は確認しません');
+            return;
+        }
+        setUpdateMessage('確認中…');
+        try {
+            const server = await fetchServerCacheName();
+            if (!server) {
+                setUpdateMessage('確認できません');
+                return;
+            }
+            const local = localVersionRef.current || await currentCacheName();
+            // 端末にキャッシュが無い（毎回ネットワークから読んでいる）ときは、そのままで最新
+            if (!local || local === server) {
+                setUpdateMessage('最新です（' + server.replace(CACHE_PREFIX, '') + '）');
+                return;
+            }
+            setUpdateMessage('更新中…');
+            await applyUpdate(); // 読み込み直すので、ここから先は表示されない
+        } catch (e) {
+            // オフラインなどでサーバーに聞けないとき
+            setUpdateMessage('確認できません');
+        }
+    }, [updateMessage, isRunning]);
+
+    // 確認の結果は数秒で消す（「…」で終わる途中経過は残す）
+    useEffect(() => {
+        if (!updateMessage || updateMessage.endsWith('…')) return;
+        const id = setTimeout(() => setUpdateMessage(null), 4000);
+        return () => clearTimeout(id);
+    }, [updateMessage]);
 
     // --- 履歴の記録 ----------------------------------------------------------
     const addHistory = useCallback((s) => {
@@ -462,7 +607,7 @@ const App = () => {
         lastCueRef.current = null;
 
         if (next.phase === PHASE.DONE) {
-            announce('終了。お疲れさまでした', 1046, 0.35);
+            announce(PHASE.DONE, '終了。お疲れさまでした', 1046, 0.35);
             // 電子音のときだけ2音目を重ねる（読み上げは文で終わりを伝えられる）
             if (soundMode === SOUND.BEEP) setTimeout(() => beep(1318, 0.5), 200);
             setPhase(PHASE.DONE);
@@ -473,7 +618,7 @@ const App = () => {
             return;
         }
 
-        announce(speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
+        announce(next.phase, speechFor(next.phase, next.set), next.phase === PHASE.WORK ? 880 : 660, 0.25);
         const d = durationOf(next.phase);
         deadlineRef.current = Date.now() + d * 1000;
         setPhase(next.phase);
@@ -485,6 +630,13 @@ const App = () => {
     useEffect(() => {
         if (!isRunning) return;
 
+        // 読み上げる数字は画面の数字に合わせる（読み上げるのは運動のときだけ）。
+        // カウントダウン表示: 残り3秒から 3・2・1 と減らす
+        // カウントアップ表示: 経過3秒からフェーズの終わりまで 3・4・5… と増やす
+        // （電子音は数字を読まないので、どちらの表示でも終了3秒前の合図のままにする）
+        const cueUp = countUp && modeFor(phase) === SOUND.VOICE;
+        const duration = durationOf(phase);
+
         const tick = () => {
             const rest = (deadlineRef.current - Date.now()) / 1000;
             if (rest <= 0) {
@@ -492,17 +644,23 @@ const App = () => {
                 return;
             }
             setRemaining(rest);
-            // 残り3秒からの秒読み。
+            // 秒読み。
             // フェーズ名の読み上げ中は見送り、言い終わってからその時点の秒で再開する
-            const sec = Math.ceil(rest);
-            if (sec <= 3 && lastCueRef.current !== sec && countdown(sec, 784, 0.1)) {
+            const sec = cueUp ? Math.floor(duration - rest) : Math.ceil(rest);
+            const due = cueUp ? sec >= 3 : sec <= 3;
+            if (due && lastCueRef.current !== sec && countdown(phase, sec, 784, 0.1)) {
                 lastCueRef.current = sec;
             }
         };
 
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
-    }, [isRunning, advance, countdown]);
+    }, [isRunning, advance, countdown, countUp, modeFor, phase, durationOf]);
+
+    // 秒読みの向きが変わったら、直前に鳴らした秒の記録は捨てる（切り替え直後の1回が飛ばないように）
+    useEffect(() => {
+        lastCueRef.current = null;
+    }, [countUp, soundMode]);
 
     // 待機中は設定変更を残り時間に反映する
     useEffect(() => {
@@ -531,11 +689,12 @@ const App = () => {
         setPhase(first);
         setCurrentSet(1);
         setRemaining(d);
-        // iOS は利用者の操作を起点にしないと読み上げが始まらないので、ここが最初の一声になる
-        announce(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
+        // 最初が準備だと合図は電子音になるので、読み上げはこの操作の中で通しておく（iOS 対策）
+        if (soundMode === SOUND.VOICE && modeFor(first) !== SOUND.VOICE) primeSpeech();
+        announce(first, speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
         setIsRunning(true);
         requestWakeLock();
-    }, [announce, requestWakeLock]);
+    }, [announce, requestWakeLock, soundMode, modeFor, primeSpeech]);
 
     const start = useCallback(() => {
         if (phase === PHASE.IDLE || phase === PHASE.DONE) {
@@ -641,7 +800,21 @@ const App = () => {
             <div className="w-full max-w-md mx-auto px-4 py-3 flex-1 min-h-0 flex flex-col gap-3">
 
                 <header className="shrink-0 flex items-center justify-between gap-2">
-                    <h1 className="text-lg font-bold tracking-wide">logTimer</h1>
+                    {/* タイトルは見た目そのままで、タップすると更新の確認をする */}
+                    <div className="min-w-0 flex items-baseline gap-2">
+                        <h1 className="text-lg font-bold tracking-wide shrink-0">
+                            <button
+                                type="button"
+                                onClick={checkUpdate}
+                                className="active:opacity-60"
+                                aria-label="更新を確認する"
+                                title="タップで更新を確認"
+                            >logTimer</button>
+                        </h1>
+                        {updateMessage && (
+                            <span className="text-xs text-white/60 truncate">{updateMessage}</span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2">
                         {installEvent && (
                             <button
