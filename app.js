@@ -152,6 +152,93 @@ const formatStamp = (iso) => {
     return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 };
 
+// --- 使い方ガイド -----------------------------------------------------------
+const GUIDE_KEY = 'logtimer-guide';
+
+// ガイドの中で実際に走らせる試し実行の設定（合計12秒）。この実行は履歴に残さない
+const GUIDE_DEMO = { prepare: 2, work: 4, rest: 2, sets: 2 };
+
+// ガイドを見た記録。localStorage が使えない環境では「見た」扱いにして毎回は出さない
+const loadGuideSeen = () => {
+    try {
+        return localStorage.getItem(GUIDE_KEY) === 'seen';
+    } catch (e) {
+        return true;
+    }
+};
+
+const saveGuideSeen = () => {
+    try {
+        localStorage.setItem(GUIDE_KEY, 'seen');
+    } catch (e) {
+        // 保存できなくてもガイド自体は動く
+    }
+};
+
+// ガイドの各ページ。
+// targets は光らせる要素の data-guide 名（空なら画面の中央に出す）。
+// tip に 'bottom' を指定すると、対象の近くではなく画面の下に吹き出しを固定する
+const GUIDE_STEPS = [
+    {
+        targets: [],
+        title: 'log-timer の使い方',
+        body: '「準備 → 運動 → 休憩」を、決めた回数だけくり返すタイマーです。\n画面の場所をひとつずつ光らせながら、ひと通り見ていきます。',
+    },
+    {
+        targets: ['settings'],
+        title: '時間と回数を決める',
+        body: '準備・運動・休憩の秒数と、くり返す回数を決めます。数字を直接書き換えても、＋ − で増減してもかまいません。右上には全体の所要時間が出ます。\n準備や休憩を 0 秒にすると、そのフェーズは飛ばします。\nよく使う設定は「既定値に設定」で覚えさせておくと、次に開いたときもその値で立ち上がります。',
+    },
+    {
+        targets: ['start', 'reset'],
+        title: '始める・止める',
+        body: '「スタート」で始まります。走っている間は「一時停止」に変わり、押すとその場で止まって、もう一度押すと続きから再開します。「リセット」で最初の状態に戻ります。\nパソコンでは、スペースキーが開始と一時停止、R キーがリセットです。',
+    },
+    {
+        targets: ['display'],
+        title: '残り時間か、経過時間か',
+        body: '↓ は残り時間、↑ は経過時間です。運動 20 秒なら、↓ は 20 から 0 へ、↑ は 0 から 20 へ進みます。\n円の進み方も、読み上げる数字も、選んだ向きに合わせて変わります。',
+    },
+    {
+        targets: ['sound'],
+        tip: 'bottom',
+        demo: true,
+        title: '音の鳴らし方',
+        body: 'このボタンを押すたびに「音声 → 電子音 → 音 オフ」と切り替わります。\n音声はフェーズの切り替えを読み上げ、運動の間は秒を数えます。電子音は終わりの 3 秒を「ピッ・ピッ・ピッ」、フェーズの終わりだけトーンを上げて「ポーン」と鳴らします。\n下のボタンで 12 秒だけ実際に動かせます。上のボタンで切り替えながら聞き比べてみてください。',
+    },
+    {
+        targets: ['history'],
+        title: '記録を振り返る',
+        body: '最後まで終えた実行が、日時と設定で 1 行ずつ残ります（端末の中に最大 50 件）。行をタップすると、その設定でもう一度始められます。\n右上のカレンダーのアイコンで、日ごとの実施回数に切り替わります。ガイドの試し実行は、ここには残しません。',
+    },
+    {
+        targets: ['header'],
+        title: '更新の確認と QRコード',
+        body: '左上の「log-timer」をタップすると、新しい版が出ていないかを確かめます。あれば取り込んで読み込み直し、無ければ「最新です」と数秒だけ出ます。\n「QR」はこのページのURLをQRコードにします。別の端末のカメラで読み取れば、同じアプリをすぐ開けます。\nこの案内は、いつでも「使い方」から見直せます。',
+    },
+];
+
+// 光らせる範囲を測る。複数を指定したときは、全部を囲む1つの枠にまとめる
+const guideBox = (names) => {
+    if (!names || names.length === 0) return null;
+    let box = null;
+    names.forEach((name) => {
+        const el = document.querySelector('[data-guide="' + name + '"]');
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return;
+        box = box === null
+            ? { top: r.top, left: r.left, right: r.right, bottom: r.bottom }
+            : {
+                top: Math.min(box.top, r.top),
+                left: Math.min(box.left, r.left),
+                right: Math.max(box.right, r.right),
+                bottom: Math.max(box.bottom, r.bottom),
+            };
+    });
+    return box;
+};
+
 // このページのURL（QRコードにして別の端末で開いてもらうのに使う）
 const PAGE_URL = window.location.href;
 
@@ -332,6 +419,93 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
     );
 };
 
+const GUIDE_PAD = 8; // 光らせる枠の外側に取る余白
+
+// 対象のまわりを暗くする帯。帯そのものが操作を受け止めるので、光っていない所は触れない。
+// 試し実行の間は薄くして、進捗の円と背景色が見えるようにする
+const GuideShade = ({ box, dim }) => {
+    const shade = 'fixed z-40 ' + (dim ? 'bg-black/40' : 'bg-black/70');
+    const px = (n) => Math.max(0, n) + 'px';
+    if (!box) return <div className={shade + ' inset-0'} />;
+    const bandTop = px(box.top - GUIDE_PAD);
+    const bandHeight = px(box.bottom - box.top + GUIDE_PAD * 2);
+    return (
+        <React.Fragment>
+            <div className={shade} style={{ top: 0, left: 0, right: 0, height: px(box.top - GUIDE_PAD) }} />
+            <div className={shade} style={{ top: px(box.bottom + GUIDE_PAD), left: 0, right: 0, bottom: 0 }} />
+            <div className={shade} style={{ top: bandTop, height: bandHeight, left: 0, width: px(box.left - GUIDE_PAD) }} />
+            <div className={shade} style={{ top: bandTop, height: bandHeight, left: px(box.right + GUIDE_PAD), right: 0 }} />
+        </React.Fragment>
+    );
+};
+
+// 使い方ガイド。光らせた場所はそのまま触れるので、説明を読みながら実際に押して試せる
+const GuideOverlay = ({ step, index, total, box, running, onDemo, onPrev, onNext, onClose }) => {
+    // 吹き出しの位置。対象が画面の上半分なら下に、下半分なら上に出す。
+    // こうすると吹き出しの高さが変わっても対象と重ならない
+    const place = step.tip === 'bottom'
+        ? { bottom: '16px' }
+        : (!box
+            ? { top: '50%', transform: 'translateY(-50%)' }
+            : (box.bottom < window.innerHeight / 2
+                ? { top: (box.bottom + GUIDE_PAD + 10) + 'px' }
+                : { bottom: (window.innerHeight - box.top + GUIDE_PAD + 10) + 'px' }));
+    const nav = 'px-3 py-1.5 rounded-lg text-sm font-bold disabled:opacity-30';
+
+    return (
+        <React.Fragment>
+            <GuideShade box={box} dim={running} />
+            {box && (
+                <div
+                    className="fixed z-40 rounded-2xl ring-2 ring-white/80 pointer-events-none"
+                    style={{
+                        top: (box.top - GUIDE_PAD) + 'px',
+                        left: (box.left - GUIDE_PAD) + 'px',
+                        width: (box.right - box.left + GUIDE_PAD * 2) + 'px',
+                        height: (box.bottom - box.top + GUIDE_PAD * 2) + 'px',
+                    }}
+                />
+            )}
+            <div className="fixed z-40 left-0 right-0 px-4" style={place}>
+                <div className="mx-auto w-full max-w-md rounded-2xl bg-white p-4 text-slate-800 shadow-xl">
+                    <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-base font-bold">{step.title}</div>
+                        <div className="shrink-0 text-xs text-slate-400 tabular">{index + 1} / {total}</div>
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed">{step.body}</p>
+                    {step.demo && (
+                        <button
+                            type="button"
+                            onClick={onDemo}
+                            className="mt-3 w-full rounded-xl bg-slate-800 py-2 text-sm font-bold text-white active:opacity-80"
+                        >{running ? '試し実行を止める' : '音を聞いてみる（12秒）'}</button>
+                    )}
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="text-xs text-slate-500 underline"
+                        >閉じる</button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={onPrev}
+                                disabled={index === 0}
+                                className={nav + ' bg-slate-100 text-slate-700'}
+                            >戻る</button>
+                            <button
+                                type="button"
+                                onClick={onNext}
+                                className={nav + ' bg-slate-800 text-white'}
+                            >{index === total - 1 ? '終わり' : '次へ'}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </React.Fragment>
+    );
+};
+
 const App = () => {
     const [settings, setSettings] = useState(INITIAL);
     const [defaults, setDefaults] = useState(INITIAL); // 「既定値に戻す」で戻る先
@@ -347,6 +521,9 @@ const App = () => {
         return { y: d.getFullYear(), m: d.getMonth() };
     });
 
+    const [guideStep, setGuideStep] = useState(null); // 開いているガイドのページ番号（null は非表示）
+    const [guideArea, setGuideArea] = useState(null); // ガイドで光らせる範囲
+
     const [phase, setPhase] = useState(PHASE.IDLE);
     const [currentSet, setCurrentSet] = useState(1);
     const [remaining, setRemaining] = useState(INITIAL.prepare > 0 ? INITIAL.prepare : INITIAL.work); // 現フェーズの残り秒（小数を含む）
@@ -359,6 +536,8 @@ const App = () => {
     const speechIdRef = useRef(0);      // 読み上げの世代。古い onend で待ちを解除しないため
     const wakeLockRef = useRef(null);
     const localVersionRef = useRef(null); // 起動した時点で端末に入っていた版
+    const demoRef = useRef(false);        // ガイドの試し実行中（履歴に残さないための目印）
+    const beforeDemoRef = useRef(null);   // 試し実行を始める前の設定（終わったら戻す）
 
     // --- 音 -----------------------------------------------------------------
     // 電子音（Web Audio API のサイン波）
@@ -675,7 +854,8 @@ const App = () => {
             setPhase(PHASE.DONE);
             setIsRunning(false);
             setRemaining(0);
-            addHistory(settings); // 最後まで終えた実行だけ履歴に残す
+            // 最後まで終えた実行だけ履歴に残す（ガイドの試し実行は残さない）
+            if (!demoRef.current) addHistory(settings);
             releaseWakeLock();
             return;
         }
@@ -807,6 +987,71 @@ const App = () => {
 
     const toggle = useCallback(() => (isRunning ? pause() : start()), [isRunning, pause, start]);
 
+    // --- 使い方ガイド --------------------------------------------------------
+    // 試し実行の後始末。走っていれば止めて、設定を元に戻す
+    const endDemo = useCallback(() => {
+        if (!demoRef.current) return;
+        demoRef.current = false;
+        reset();
+        if (beforeDemoRef.current) setSettings(beforeDemoRef.current);
+        beforeDemoRef.current = null;
+    }, [reset]);
+
+    // ガイドの中の試し実行。本物のタイマーを短い設定で走らせるので、音も進み方も普段どおり
+    const toggleDemo = useCallback(() => {
+        // 走っている最中なら止める（試し実行なら設定も元に戻す）
+        if (isRunning) {
+            if (demoRef.current) endDemo();
+            else reset();
+            return;
+        }
+        // 元の設定を控えるのは最初の1回だけ。続けて2回試しても失わないようにする
+        if (!beforeDemoRef.current) beforeDemoRef.current = settings;
+        demoRef.current = true;
+        setSettings(GUIDE_DEMO);
+        startWith(GUIDE_DEMO);
+    }, [isRunning, settings, reset, endDemo, startWith]);
+
+    const openGuide = useCallback(() => {
+        setShowCalendar(false); // カレンダーを出したままだと設定の場所を指せない
+        setGuideStep(0);
+        saveGuideSeen();
+    }, []);
+
+    const closeGuide = useCallback(() => {
+        endDemo();
+        setGuideStep(null);
+    }, [endDemo]);
+
+    // ページを送る。端をはみ出したら閉じる
+    const moveGuide = useCallback((delta) => {
+        endDemo();
+        setGuideStep((i) => {
+            const next = i + delta;
+            return next < 0 || next >= GUIDE_STEPS.length ? null : next;
+        });
+    }, [endDemo]);
+
+    // 初めて開いたときだけ自動で出す。
+    // 出した時点で「見た」ことにして、途中で閉じても次回から出さない
+    useEffect(() => {
+        if (loadGuideSeen()) return;
+        setGuideStep(0);
+        saveGuideSeen();
+    }, []);
+
+    // 光らせる範囲を測り直す。画面の作りが変わったときと、窓の大きさが変わったときに測る
+    useEffect(() => {
+        if (guideStep === null) return;
+        const update = () => setGuideArea(guideBox(GUIDE_STEPS[guideStep].targets));
+        const id = requestAnimationFrame(update); // 配置が決まってから測る
+        window.addEventListener('resize', update);
+        return () => {
+            cancelAnimationFrame(id);
+            window.removeEventListener('resize', update);
+        };
+    }, [guideStep, showCalendar, installEvent, isRunning, updateMessage, history.length]);
+
     // キーボード操作（Space: 開始/一時停止、R: リセット）
     useEffect(() => {
         const onKeyDown = (e) => {
@@ -814,6 +1059,13 @@ const App = () => {
             // QRコードを開いている間は、閉じる操作だけ受け付ける
             if (qrCode) {
                 if (e.key === 'Escape') setQrCode(null);
+                return;
+            }
+            // ガイドを開いている間は、ページ送りと閉じる操作だけ受け付ける
+            if (guideStep !== null) {
+                if (e.key === 'Escape') closeGuide();
+                else if (e.key === 'ArrowRight') moveGuide(1);
+                else if (e.key === 'ArrowLeft' && guideStep > 0) moveGuide(-1);
                 return;
             }
             if (e.code === 'Space') {
@@ -825,7 +1077,7 @@ const App = () => {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [toggle, reset, qrCode]);
+    }, [toggle, reset, qrCode, guideStep, closeGuide, moveGuide]);
 
     // --- 表示用の値 ----------------------------------------------------------
     const style = PHASE_STYLE[phase];
@@ -872,7 +1124,7 @@ const App = () => {
         >
             <div className="w-full max-w-md mx-auto px-4 py-3 flex-1 min-h-0 flex flex-col gap-3">
 
-                <header className="shrink-0 flex items-center justify-between gap-2">
+                <header data-guide="header" className="shrink-0 flex items-center justify-between gap-2">
                     {/* タイトルは見た目そのままで、タップすると更新の確認をする */}
                     <div className="min-w-0 flex items-baseline gap-2">
                         <h1 className="text-lg font-bold tracking-wide shrink-0">
@@ -888,24 +1140,32 @@ const App = () => {
                             <span className="text-xs text-white/60 truncate">{updateMessage}</span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                         {installEvent && (
                             <button
                                 type="button"
                                 onClick={install}
-                                className="text-xs text-white px-2.5 py-1 rounded-lg bg-white/20"
+                                className="text-xs text-white px-2.5 py-1 rounded-lg bg-white/20 whitespace-nowrap"
                             >ホーム画面に追加</button>
                         )}
                         <button
                             type="button"
+                            onClick={openGuide}
+                            disabled={isRunning}
+                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap disabled:opacity-30"
+                            aria-label="使い方のガイドを開く"
+                        >使い方</button>
+                        <button
+                            type="button"
                             onClick={cycleSound}
-                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
+                            data-guide="sound"
+                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap"
                             aria-label="音の鳴らし方の切り替え（音声 / 電子音 / オフ）"
                         >{SOUND_LABEL[soundMode]}</button>
                         <button
                             type="button"
                             onClick={openQr}
-                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10"
+                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap"
                             aria-label="このページのQRコードを表示"
                         >QR</button>
                     </div>
@@ -939,6 +1199,7 @@ const App = () => {
                         <button
                             type="button"
                             onClick={toggle}
+                            data-guide="start"
                             className="h-14 rounded-2xl bg-white text-slate-900 text-lg font-bold active:scale-95 transition-transform"
                         >
                             {isRunning ? '一時停止' : (phase === PHASE.IDLE || phase === PHASE.DONE ? 'スタート' : '再開')}
@@ -946,13 +1207,14 @@ const App = () => {
                         <button
                             type="button"
                             onClick={reset}
+                            data-guide="reset"
                             className="h-12 rounded-2xl bg-white/15 text-white text-base font-bold active:scale-95 transition-transform"
                         >
                             リセット
                         </button>
 
                         {/* 表示方法: ↓ カウントダウン / ↑ カウントアップ */}
-                        <div className="grid grid-cols-2 gap-2">
+                        <div data-guide="display" className="grid grid-cols-2 gap-2">
                             {[
                                 { key: false, label: 'カウントダウン（残り時間）' },
                                 { key: true,  label: 'カウントアップ（経過時間）' },
@@ -977,7 +1239,7 @@ const App = () => {
 
                 {/* 設定（カレンダー表示中は隠して、その分カレンダーを広く使う） */}
                 {!showCalendar && (
-                    <div className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
+                    <div data-guide="settings" className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
                         <div className="flex items-baseline justify-between mb-1">
                             <div className="text-sm text-white/80">設定</div>
                             <div className="text-xs text-white/60">
@@ -1013,7 +1275,7 @@ const App = () => {
                 )}
 
                 {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
-                <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
+                <div data-guide="history" className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 px-1">
                         <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
                         <div className="flex items-center gap-5">
@@ -1146,6 +1408,21 @@ const App = () => {
                     スペースキー: 開始 / 一時停止　・　R キー: リセット
                 </p>
             </div>
+
+            {/* 使い方ガイド */}
+            {guideStep !== null && (
+                <GuideOverlay
+                    step={GUIDE_STEPS[guideStep]}
+                    index={guideStep}
+                    total={GUIDE_STEPS.length}
+                    box={guideArea}
+                    running={isRunning}
+                    onDemo={toggleDemo}
+                    onPrev={() => moveGuide(-1)}
+                    onNext={() => moveGuide(1)}
+                    onClose={closeGuide}
+                />
+            )}
 
             {/* QRコード。どこをタップしても閉じる */}
             {qrCode && (
