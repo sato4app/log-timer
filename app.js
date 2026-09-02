@@ -1016,9 +1016,9 @@ const App = () => {
                 <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 px-1">
                         <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-5">
                             {/* 一覧 / カレンダーの切り替え（押している方が白く反転する） */}
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-3">
                                 <button
                                     type="button"
                                     onClick={() => setShowCalendar(false)}
@@ -1106,11 +1106,11 @@ const App = () => {
                         <React.Fragment>
                             <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
                                 <span className="flex-1 min-w-0">日時</span>
-                                <span className="w-4 shrink-0" />{/* 表示方法の矢印。見出しは付けない */}
                                 <span className="w-8 text-right">準備</span>
                                 <span className="w-8 text-right">運動</span>
                                 <span className="w-8 text-right">休憩</span>
                                 <span className="w-8 text-right">回数</span>
+                                <span className="w-4 shrink-0" />{/* 表示方法の矢印。見出しは付けない */}
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10">
                                 {history.length === 0 ? (
@@ -1127,14 +1127,14 @@ const App = () => {
                                         className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
                                     >
                                         <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
-                                        <span className="w-4 shrink-0 flex justify-center text-white/70">
-                                            {/* 古い記録には表示方法が入っていないので、そのときは空欄にする */}
-                                            {typeof h.countUp === 'boolean' && <ArrowIcon up={h.countUp} size={16} />}
-                                        </span>
                                         <span className="w-8 text-right tabular">{h.prepare}</span>
                                         <span className="w-8 text-right tabular">{h.work}</span>
                                         <span className="w-8 text-right tabular">{h.rest}</span>
                                         <span className="w-8 text-right tabular">{h.sets}</span>
+                                        <span className="w-4 shrink-0 flex justify-center text-white/70">
+                                            {/* 古い記録には表示方法が入っていないので、そのときは空欄にする */}
+                                            {typeof h.countUp === 'boolean' && <ArrowIcon up={h.countUp} size={16} />}
+                                        </span>
                                     </button>
                                 ))}
                             </div>
