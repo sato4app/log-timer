@@ -196,8 +196,8 @@ const GUIDE_STEPS = [
     },
     {
         targets: ['display'],
-        title: '残り時間か、経過時間か',
-        body: '↓ は残り時間、↑ は経過時間です。運動 20 秒なら、↓ は 20 から 0 へ、↑ は 0 から 20 へ進みます。\n円の進み方も、読み上げる数字も、選んだ向きに合わせて変わります。',
+        title: 'カウントダウンとカウントアップ',
+        body: '↓ はカウントダウン（残り時間）、↑ はカウントアップ（経過時間）です。運動 20 秒なら、↓ は 20・19…1・0 と減り、↑ は 1・2…19・20 と増えます。\n円の進み方も、読み上げる数字も、選んだ向きに合わせて変わります。',
     },
     {
         targets: ['sound'],
@@ -345,6 +345,9 @@ const ListIcon = () => (
 );
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// カレンダーの1日を表す☆の数の上限（これを超えた日も☆3つ）
+const STAR_MAX = 3;
 
 // 履歴を「年-月-日」ごとの件数にまとめる
 const countByDay = (history) => {
@@ -1350,12 +1353,14 @@ const App = () => {
                                         return (
                                             <div
                                                 key={d}
+                                                title={n > 0 ? n + ' 回' : undefined}
                                                 className={'rounded-lg py-1 ' + (n > 0 ? 'bg-white/20' : 'bg-white/5')
                                                     + (isToday ? ' ring-1 ring-white/70' : '')}
                                             >
                                                 <div className="text-xs text-white/60 leading-none">{d}</div>
-                                                <div className="text-sm font-bold tabular leading-none mt-1 h-4">
-                                                    {n > 0 ? n : ''}
+                                                {/* 回数は☆の数で表す。狭い画面でも3つ並ぶよう字間を詰める */}
+                                                <div className="text-xs leading-none mt-1 h-4 tracking-tighter">
+                                                    {'☆'.repeat(Math.min(n, STAR_MAX))}
                                                 </div>
                                             </div>
                                         );
