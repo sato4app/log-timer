@@ -1261,18 +1261,18 @@ const App = () => {
                             <NumberField label="回数" value={settings.sets} limit={LIMITS.sets} disabled={isRunning}
                                 onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
                         </div>
-                        <div className="mt-2 flex items-center gap-4 text-xs">
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                             <button
                                 type="button"
                                 onClick={restoreDefaults}
                                 disabled={isRunning || isDefaultSettings}
-                                className="text-white/70 underline disabled:opacity-30"
+                                className="text-white underline whitespace-nowrap disabled:opacity-40"
                             >既定値に戻す（{defaults.prepare}/{defaults.work}/{defaults.rest}/{defaults.sets}回）</button>
                             <button
                                 type="button"
                                 onClick={saveAsDefaults}
                                 disabled={isRunning || isDefaultSettings}
-                                className="text-white/70 underline disabled:opacity-30"
+                                className="text-white underline whitespace-nowrap disabled:opacity-40"
                                 title="いまの設定を既定値として保存します"
                             >既定値に設定</button>
                         </div>
