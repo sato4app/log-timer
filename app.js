@@ -1018,7 +1018,7 @@ const App = () => {
                         <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
                         <div className="flex items-center gap-5">
                             {/* 一覧 / カレンダーの切り替え（押している方が白く反転する） */}
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-5">
                                 <button
                                     type="button"
                                     onClick={() => setShowCalendar(false)}

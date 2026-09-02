@@ -1,7 +1,7 @@
 // log-timer Service Worker
 // キャッシュ名を変えると古いキャッシュを破棄して入れ替わる。
 // このアプリの版数はここ1箇所だけ。ページ側もこの名前を聞きに来る（タイトルをタップしたときの更新確認）
-const CACHE_NAME = 'logtimer-v9';
+const CACHE_NAME = 'logtimer-v10';
 
 // アプリ本体（同一オリジン）。相対パスなのでサブディレクトリ配信でも動く
 const APP_SHELL = [
