@@ -346,8 +346,10 @@ const ListIcon = () => (
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
-// カレンダーの1日を表す☆の数の上限（これを超えた日も☆3つ）
+// カレンダーのマスに出す印。☆を並べるのは3回まで、
+// それより多い日は並べずに「☆4」のように回数を添える
 const STAR_MAX = 3;
+const starsFor = (n) => (n <= 0 ? '' : (n <= STAR_MAX ? '☆'.repeat(n) : '☆' + n));
 
 // 履歴を「年-月-日」ごとの件数にまとめる
 const countByDay = (history) => {
@@ -1353,14 +1355,13 @@ const App = () => {
                                         return (
                                             <div
                                                 key={d}
-                                                title={n > 0 ? n + ' 回' : undefined}
                                                 className={'rounded-lg py-1 ' + (n > 0 ? 'bg-white/20' : 'bg-white/5')
                                                     + (isToday ? ' ring-1 ring-white/70' : '')}
                                             >
                                                 <div className="text-xs text-white/60 leading-none">{d}</div>
-                                                {/* 回数は☆の数で表す。狭い画面でも3つ並ぶよう字間を詰める */}
+                                                {/* 回数は☆で表す。狭い画面でも3つ並ぶよう字間を詰める */}
                                                 <div className="text-xs leading-none mt-1 h-4 tracking-tighter">
-                                                    {'☆'.repeat(Math.min(n, STAR_MAX))}
+                                                    {starsFor(n)}
                                                 </div>
                                             </div>
                                         );
