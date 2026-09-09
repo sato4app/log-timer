@@ -9,9 +9,9 @@
     <!-- PWA -->
     <link rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#0f172a" />
-    <link rel="icon" type="image/png" href="icon-192.png" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
     <!-- iOS はマニフェストのアイコンを見ないため個別に指定する -->
-    <link rel="apple-touch-icon" href="icon-180.png" />
+    <link rel="apple-touch-icon" href="icons/icon-180.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -43,9 +43,14 @@
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none;
+            appearance: none;
             margin: 0;
         }
-        input[type="number"] { -moz-appearance: textfield; }
+        /* 接頭辞なしの appearance も併記する（Firefox 以外や、将来の版のため） */
+        input[type="number"] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
         /* タイマー数字は等幅にして桁の増減でガタつかせない */
         .tabular { font-variant-numeric: tabular-nums; }
         #loading {
