@@ -102,3 +102,14 @@ CDN から読み込むライブラリも Service Worker がキャッシュする
 
 版数を書くのはこの1箇所だけです。タイトルをタップしたときの更新確認は、
 端末側の版を Service Worker に聞き、サーバー側の版を `service-worker.js` から読み取って見比べます。
+
+### ライセンス
+
+  ソースコードは [MIT License](LICENSE) で公開している（Copyright (c) 2026 sato4app）。
+
+  ※ アプリアイコン（`icons/icon-180.png` / `icon-192.png` / `icon-512.png`）は生成AI で
+  作成したもので、著作権を主張していない。MIT License はソースコードに対するものである。
+
+  なお、CDN から読み込むライブラリ（React、Tailwind CSS、Babel standalone、
+  qrcode-generator）は本リポジトリに含まれず、本ライセンスの対象外である
+  （それぞれの提供元の利用条件に従う）。
