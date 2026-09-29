@@ -617,10 +617,21 @@ const App = () => {
         if (mode === SOUND.OFF) return;
         try {
             // 電子音は「音声」でも使う（準備と休憩の秒読み）ので、どちらでも用意する
-            if (!audioCtxRef.current) {
+            if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
                 audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
             }
-            if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+            const ctx = audioCtxRef.current;
+            // iOS は読み上げの後などに 'interrupted' で止まることがあり、'suspended' だけ見ていると戻せない。
+            // 止まったままだと、次の実行の準備・休憩の電子音が鳴らなくなる
+            if (ctx.state !== 'running') ctx.resume().catch(() => {});
+            // 操作の中で無音をひとつ鳴らして、音の出口を確実に開いておく
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            gain.gain.value = 0;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.05);
         } catch (e) {
             // 音が出せない環境でもタイマー自体は動かす
         }
@@ -956,9 +967,10 @@ const App = () => {
         }
         // 一時停止からの再開
         deadlineRef.current = Date.now() + remaining * 1000;
+        primeSound(soundMode); // 再開の操作の中でも音の出口を開き直す（iOS 対策）
         setIsRunning(true);
         requestWakeLock();
-    }, [phase, settings, remaining, startWith, requestWakeLock]);
+    }, [phase, settings, remaining, startWith, requestWakeLock, primeSound, soundMode]);
 
     // 履歴の行をタップしたとき: その設定を読み込んで即実行する
     const runAgain = useCallback((entry) => {
