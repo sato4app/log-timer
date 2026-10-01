@@ -209,7 +209,7 @@ const GUIDE_STEPS = [
     {
         targets: ['history'],
         title: '記録を振り返る',
-        body: '最後まで終えた実行が、日時と設定で 1 行ずつ残ります（端末の中に最大 50 件）。行をタップすると、その設定でもう一度始められます。\n右上のカレンダーのアイコンで、日ごとの実施回数に切り替わります。ガイドの試し実行は、ここには残しません。',
+        body: '最後まで終えた実行が、日時と設定で 1 行ずつ残ります（端末の中に最大 50 件）。行をタップすると、その設定と表示方法（↑/↓）を読み込みます。スタートボタンで始めてください。\n右上のカレンダーのアイコンで、日ごとの実施回数に切り替わります。ガイドの試し実行は、ここには残しません。',
     },
     {
         targets: ['header'],
@@ -532,6 +532,9 @@ const App = () => {
     const [phase, setPhase] = useState(PHASE.IDLE);
     const [currentSet, setCurrentSet] = useState(1);
     const [remaining, setRemaining] = useState(INITIAL.prepare > 0 ? INITIAL.prepare : INITIAL.work); // 現フェーズの残り秒（小数を含む）
+    // 現フェーズの長さ（秒）。フェーズに入った時点の設定で決める。
+    // 一時停止中に設定を変えても、走っているフェーズはこの長さのまま進め、新しい値は次のフェーズから使う
+    const [phaseLen, setPhaseLen] = useState(0);
     const [isRunning, setIsRunning] = useState(false);
 
     const deadlineRef = useRef(0);      // 現フェーズの終了時刻（epoch ms）
@@ -816,6 +819,7 @@ const App = () => {
     }, [countUp]);
 
     const clearHistory = useCallback(() => {
+        if (!window.confirm('履歴をすべて消去します。元に戻せませんが、よろしいですか？')) return;
         setHistory([]);
         saveHistory([]);
     }, []);
@@ -870,6 +874,7 @@ const App = () => {
             setPhase(PHASE.DONE);
             setIsRunning(false);
             setRemaining(0);
+            setPhaseLen(0);
             // 最後まで終えた実行だけ履歴に残す（ガイドの試し実行は残さない）
             if (!demoRef.current) addHistory(settings);
             releaseWakeLock();
@@ -882,6 +887,7 @@ const App = () => {
         setPhase(next.phase);
         setCurrentSet(next.set);
         setRemaining(d);
+        setPhaseLen(d);
     }, [phase, currentSet, nextOf, durationOf, announce, soundMode, beep, releaseWakeLock, addHistory, settings]);
 
     // --- 計時（実時刻ベースなので取りこぼしても遅れない） ----------------------
@@ -893,7 +899,7 @@ const App = () => {
         // 準備と休憩は数字を読まないので、どちらの表示でも終了3秒前の電子音だけにする
         const readsNumbers = cueModeFor(phase) === SOUND.VOICE;
         const cueUp = readsNumbers && countUp;
-        const duration = durationOf(phase);
+        const duration = phaseLen; // フェーズに入った時点の長さ（一時停止中の設定変更は次のフェーズから）
 
         const tick = () => {
             const rest = (deadlineRef.current - Date.now()) / 1000;
@@ -919,7 +925,7 @@ const App = () => {
 
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
-    }, [isRunning, advance, countdown, countUp, cueModeFor, phase, durationOf]);
+    }, [isRunning, advance, countdown, countUp, cueModeFor, phase, phaseLen]);
 
     // 秒読みの向きが変わったら、直前に鳴らした秒の記録は捨てる（切り替え直後の1回が飛ばないように）
     useEffect(() => {
@@ -943,7 +949,7 @@ const App = () => {
     }, [isRunning, requestWakeLock]);
 
     // --- 操作 ---------------------------------------------------------------
-    // 指定した設定で最初から開始する（履歴からの再実行でも使う）
+    // 指定した設定で最初から開始する
     const startWith = useCallback((s) => {
         // 最初のフェーズを決める（準備が0秒なら運動から）
         const first = s.prepare > 0 ? PHASE.PREPARE : PHASE.WORK;
@@ -953,6 +959,7 @@ const App = () => {
         setPhase(first);
         setCurrentSet(1);
         setRemaining(d);
+        setPhaseLen(d);
         // iOS は利用者の操作を起点にしないと音が出ないので、この操作の中で用意しておく
         primeSound(soundMode);
         announce(speechFor(first, 1), first === PHASE.WORK ? 880 : 660, 0.25);
@@ -972,18 +979,25 @@ const App = () => {
         requestWakeLock();
     }, [phase, settings, remaining, startWith, requestWakeLock, primeSound, soundMode]);
 
-    // 履歴の行をタップしたとき: その設定を読み込んで即実行する
-    const runAgain = useCallback((entry) => {
+    // 履歴の行をタップしたとき: その設定と表示方法（↑/↓）を読み込んで、開始待ちに戻す。
+    // 始めるのはスタートボタンから
+    const recallHistory = useCallback((entry) => {
         if (isRunning) return;
-        const s = {
+        setSettings({
             prepare: clamp(entry.prepare, LIMITS.prepare.min, LIMITS.prepare.max),
             work:    clamp(entry.work,    LIMITS.work.min,    LIMITS.work.max),
             rest:    clamp(entry.rest,    LIMITS.rest.min,    LIMITS.rest.max),
             sets:    clamp(entry.sets,    LIMITS.sets.min,    LIMITS.sets.max),
-        };
-        setSettings(s);
-        startWith(s);
-    }, [isRunning, startWith]);
+        });
+        // 古い記録には表示方法が入っていないので、そのときは今の向きのままにする
+        if (typeof entry.countUp === 'boolean') setCountUp(entry.countUp);
+        // 一時停止中や終了後でも、読み込んだ設定で最初からやり直せるようにする
+        // （残り時間は開始待ちになったところで設定から入れ直される）
+        setPhase(PHASE.IDLE);
+        setCurrentSet(1);
+        lastCueRef.current = null;
+        stopSpeaking();
+    }, [isRunning, stopSpeaking]);
 
     const pause = useCallback(() => {
         setRemaining(Math.max(0, (deadlineRef.current - Date.now()) / 1000));
@@ -1098,9 +1112,10 @@ const App = () => {
 
     // --- 表示用の値 ----------------------------------------------------------
     const style = PHASE_STYLE[phase];
+    // 待機中は設定から、それ以外はフェーズに入った時点の長さで測る（数字と円の進み具合をそろえるため）
     const phaseDuration = phase === PHASE.IDLE
         ? (settings.prepare > 0 ? settings.prepare : settings.work)
-        : durationOf(phase);
+        : phaseLen;
     const elapsed = Math.max(0, phaseDuration - remaining);
     const shownSeconds = phase === PHASE.DONE
         ? 0
@@ -1109,6 +1124,12 @@ const App = () => {
     const progress = phaseDuration > 0
         ? clamp(countUp ? elapsed / phaseDuration : remaining / phaseDuration, 0, 1)
         : 0;
+
+    // 一時停止中は、回数を今の回より減らせないようにする（休憩中なら次の運動の回まで残す）
+    const inProgress = phase !== PHASE.IDLE && phase !== PHASE.DONE;
+    const setsLimit = inProgress
+        ? { ...LIMITS.sets, min: Math.min(LIMITS.sets.max, phase === PHASE.REST ? currentSet + 1 : currentSet) }
+        : LIMITS.sets;
 
     const totalSeconds = settings.prepare + settings.sets * settings.work + (settings.sets - 1) * settings.rest;
     const RADIUS = 130;
@@ -1270,7 +1291,7 @@ const App = () => {
                                 onChange={(v) => setSettings((s) => ({ ...s, work: v }))} />
                             <NumberField label="休憩" value={settings.rest} limit={LIMITS.rest} disabled={isRunning}
                                 onChange={(v) => setSettings((s) => ({ ...s, rest: v }))} />
-                            <NumberField label="回数" value={settings.sets} limit={LIMITS.sets} disabled={isRunning}
+                            <NumberField label="回数" value={settings.sets} limit={setsLimit} disabled={isRunning}
                                 onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -1291,7 +1312,7 @@ const App = () => {
                     </div>
                 )}
 
-                {/* 履歴（画面の下側。行をタップするとその設定で再実行） */}
+                {/* 履歴（画面の下側。行をタップするとその設定と表示方法を読み込む） */}
                 <div data-guide="history" className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 px-1">
                         <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
@@ -1401,9 +1422,9 @@ const App = () => {
                                     <button
                                         key={h.id}
                                         type="button"
-                                        onClick={() => runAgain(h)}
+                                        onClick={() => recallHistory(h)}
                                         disabled={isRunning}
-                                        title="タップするとこの設定で実行します"
+                                        title="タップするとこの設定を読み込みます（スタートで開始）"
                                         className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
                                     >
                                         <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
