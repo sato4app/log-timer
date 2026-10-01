@@ -1,6 +1,6 @@
 # log-timer 機能仕様書
 
-**バージョン:** v17（`service-worker.js` の `CACHE_NAME = 'logtimer-v17'`）
+**バージョン:** v18（`service-worker.js` の `CACHE_NAME = 'logtimer-v18'`）
 **最終更新日:** 2026年10月1日
 
 ---
@@ -18,7 +18,7 @@ PWA としてホーム画面に追加でき、2回目以降の起動はオフラ
 
 ### 1.3 動作環境
 - **プラットフォーム:** Webブラウザ（PWA対応）
-- **必須環境:** HTTPS または localhost（Service Worker の要件）。`file://` では `app.js` を Babel が読み込めないため動作しない
+- **必須環境:** HTTPS または localhost（Service Worker の要件）。`file://` では Service Worker が動かないため、オフライン動作とホーム画面への追加はできない
 - **任意の機能と必要な API**
   | 機能 | API | 非対応のとき |
   | --- | --- | --- |
@@ -30,18 +30,18 @@ PWA としてホーム画面に追加でき、2回目以降の起動はオフラ
 ### 1.4 技術スタック
 | 項目 | 技術 |
 | --- | --- |
-| UI | React 18（CDN / UMD 版、`react.production.min.js`） |
-| JSX 変換 | Babel standalone（ブラウザ内で `app.js` を変換） |
-| スタイル | Tailwind CSS（CDN）＋ `index.html` 内の少量の CSS |
-| QRコード | qrcode-generator 1.4.4（CDN） |
+| UI | React 18.3.1（CDN / UMD 版、`react.production.min.js`。`integrity` で検証） |
+| スタイル | Tailwind CSS 3.4.17（CLI でビルドした `styles.css`）＋ `index.html` 内の少量の CSS |
+| QRコード | qrcode-generator 1.4.4（CDN。`integrity` で検証） |
 | 音 | Web Audio API（サイン波の電子音）、Web Speech API（日本語の読み上げ） |
 | オフライン | Service Worker + Cache API |
 
 ### 1.5 ファイル構成
 | ファイル | 内容 |
 | --- | --- |
-| `index.html` | CDN 読み込み、PWA 用メタタグ、マウント先（`#root`）、Service Worker の登録 |
-| `app.js` | アプリ本体（React コンポーネント。JSX を Babel でブラウザ内変換） |
+| `index.html` | CDN・`styles.css` の読み込み、PWA 用メタタグ、マウント先（`#root`）、Service Worker の登録 |
+| `app.js` | アプリ本体（React コンポーネント。JSX は使わず `h` = `React.createElement` で記述） |
+| `styles.css` | Tailwind CSS の CLI で生成したスタイル。`tailwind.config.js` / `tailwind.input.css` から作る（手順は README） |
 | `manifest.json` | アプリ名・アイコン・表示方法（standalone / portrait）の定義 |
 | `service-worker.js` | オフライン用キャッシュ。アプリの版数（`CACHE_NAME`）を持つ唯一の場所 |
 | `icons/icon-180.png` | iOS ホーム画面用（apple-touch-icon） |
@@ -56,6 +56,7 @@ PWA としてホーム画面に追加でき、2回目以降の起動はオフラ
 | 表示補助 | `formatTime` / `formatStamp` / `starsFor` / `countByDay` / `monthCells` | 時間表示、履歴の日時、カレンダーの集計 |
 | 更新確認 | `currentCacheName` / `fetchServerCacheName` / `applyUpdate` | 端末とサーバーの版の比較と入れ替え |
 | ガイド | `GUIDE_STEPS` / `GUIDE_DEMO` / `guideBox` | ガイドの各ページ、試し実行の設定、光らせる範囲の計測 |
+| 要素の生成 | `h`（= `React.createElement`） | JSX を使わずに画面を組み立てる。`h(要素, 属性, 子要素...)` |
 | コンポーネント | `ArrowIcon` / `CalendarIcon` / `ListIcon` | アイコン（SVG） |
 | コンポーネント | `NumberField` | 設定値の入力欄と ＋ − ボタン |
 | コンポーネント | `GuideShade` / `GuideOverlay` | ガイドの暗幕と吹き出し |
@@ -376,12 +377,12 @@ iOS 向けに `apple-touch-icon`（180px）と `apple-mobile-web-app-*` のメ�
 ### 11.3 Service Worker のキャッシュ戦略
 | 対象 | 戦略 |
 | --- | --- |
-| インストール時 | アプリ本体（`./`、`index.html`、`app.js`、`manifest.json`、アイコン3つ）を1つずつキャッシュ（1つ失敗しても他は入れる）。すぐに有効化する |
+| インストール時 | アプリ本体（`./`、`index.html`、`app.js`、`styles.css`、`manifest.json`、アイコン3つ）を1つずつキャッシュ（1つ失敗しても他は入れる）。すぐに有効化する |
 | 有効化時 | 今の `CACHE_NAME` 以外のキャッシュを消し、開いているページを受け持つ |
 | `service-worker.js` 自身 | キャッシュを挟まない（古い版を返すと更新に気づけないため） |
 | ページ遷移 | ネットワーク優先。取れなければキャッシュ、それもなければ `index.html` |
 | 同じオリジンのファイル | キャッシュを即返し、裏でネットワークから取り直してキャッシュを更新 |
-| CDN（React / Tailwind / Babel / qrcode-generator） | キャッシュ優先。なければ取得してキャッシュに入れる |
+| CDN（React / qrcode-generator） | キャッシュ優先。なければ取得してキャッシュに入れる（`crossorigin` 付きで読むので、状態 200 の応答だけを入れる） |
 
 - ページからのメッセージ: `'cache-name'` には版（`CACHE_NAME`）を返し、`'skip-waiting'` で待機中の版に入れ替える
 - 版数を書くのは `service-worker.js` の `CACHE_NAME` だけ。ファイルを更新したら版数を上げる

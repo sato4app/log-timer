@@ -1,0 +1,4 @@
+/* styles.css の元になるファイル。これを直接読み込むのではなく、ビルドした styles.css を読み込む */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

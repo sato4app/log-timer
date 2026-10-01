@@ -1,4 +1,6 @@
 const { useState, useEffect, useRef, useCallback } = React;
+// JSX を使わずに画面を組み立てる。h(要素, 属性, 子要素...) は <要素 属性>子要素</要素> と同じ意味
+const h = React.createElement;
 
 // 組み込みの既定値（秒 / 回）。利用者が保存した既定値があればそちらを使う
 const DEFAULTS = {
@@ -310,38 +312,60 @@ const applyUpdate = async () => {
 
 // 表示方法の切り替え用アイコン（下向き=カウントダウン / 上向き=カウントアップ）
 const ArrowIcon = ({ up, size = 22 }) => (
-    <svg
-        width={size} height={size} viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" strokeWidth="2.5"
-        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-    >
-        {up
-            ? <path d="M12 20V4M5 11l7-7 7 7" />
-            : <path d="M12 4v16M5 13l7 7 7-7" />}
-    </svg>
+    h(
+        'svg',
+        {
+            width: size,
+            height: size,
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: '2.5',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            'aria-hidden': 'true',
+        },
+        up ? h('path', { d: 'M12 20V4M5 11l7-7 7 7' }) : h('path', { d: 'M12 4v16M5 13l7 7 7-7' }),
+    )
 );
 
 // 日ごとの実施回数を開くアイコン
 const CalendarIcon = () => (
-    <svg
-        width="18" height="18" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" strokeWidth="2"
-        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-    >
-        <rect x="3" y="5" width="18" height="16" rx="2" />
-        <path d="M3 10h18M8 3v4M16 3v4" />
-    </svg>
+    h(
+        'svg',
+        {
+            width: '18',
+            height: '18',
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: '2',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            'aria-hidden': 'true',
+        },
+        h('rect', { x: '3', y: '5', width: '18', height: '16', rx: '2' }),
+        h('path', { d: 'M3 10h18M8 3v4M16 3v4' }),
+    )
 );
 
 // 履歴の一覧に戻るアイコン
 const ListIcon = () => (
-    <svg
-        width="18" height="18" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" strokeWidth="2"
-        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-    >
-        <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
-    </svg>
+    h(
+        'svg',
+        {
+            width: '18',
+            height: '18',
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: '2',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            'aria-hidden': 'true',
+        },
+        h('path', { d: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01' }),
+    )
 );
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -354,8 +378,8 @@ const starsFor = (n) => (n <= 0 ? '' : (n <= STAR_MAX ? '☆'.repeat(n) : '☆' 
 // 履歴を「年-月-日」ごとの件数にまとめる
 const countByDay = (history) => {
     const counts = {};
-    history.forEach((h) => {
-        const d = new Date(h.at);
+    history.forEach((entry) => {
+        const d = new Date(entry.at);
         if (Number.isNaN(d.getTime())) return;
         const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
         counts[key] = (counts[key] || 0) + 1;
@@ -387,40 +411,58 @@ const NumberField = ({ label, value, onChange, limit, disabled }) => {
     };
 
     return (
-        <div className="min-w-0 flex flex-col gap-1">
-            <div className="text-sm text-white/80 text-center truncate">
-                {label}<span className="text-white/40">({limit.unit})</span>
-            </div>
-            <input
-                type="number"
-                inputMode="numeric"
-                value={draft === null ? value : draft}
-                disabled={disabled}
-                onFocus={() => setDraft('')}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={commit}
-                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                placeholder={String(value)}
-                className="w-full h-9 rounded-lg bg-white/10 text-white text-center tabular placeholder:text-white/30 disabled:opacity-40"
-                aria-label={label}
-            />
-            <div className="grid grid-cols-2 gap-1">
-                <button
-                    type="button"
-                    onClick={() => step(-1)}
-                    disabled={disabled || value <= limit.min}
-                    className={btn}
-                    aria-label={label + 'を減らす'}
-                >−</button>
-                <button
-                    type="button"
-                    onClick={() => step(1)}
-                    disabled={disabled || value >= limit.max}
-                    className={btn}
-                    aria-label={label + 'を増やす'}
-                >＋</button>
-            </div>
-        </div>
+        h(
+            'div',
+            { className: 'min-w-0 flex flex-col gap-1' },
+            h(
+                'div',
+                { className: 'text-sm text-white/80 text-center truncate' },
+                label,
+                h('span', { className: 'text-white/40' }, '(', limit.unit, ')'),
+            ),
+            h('input', {
+                type: 'number',
+                inputMode: 'numeric',
+                value: draft === null ? value : draft,
+                disabled: disabled,
+                onFocus: () => setDraft(''),
+                onChange: (e) => setDraft(e.target.value),
+                onBlur: commit,
+                onKeyDown: (e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                },
+                placeholder: String(value),
+                className:
+                    'w-full h-9 rounded-lg bg-white/10 text-white text-center tabular placeholder:text-white/30 disabled:opacity-40',
+                'aria-label': label,
+            }),
+            h(
+                'div',
+                { className: 'grid grid-cols-2 gap-1' },
+                h(
+                    'button',
+                    {
+                        type: 'button',
+                        onClick: () => step(-1),
+                        disabled: disabled || value <= limit.min,
+                        className: btn,
+                        'aria-label': label + 'を減らす',
+                    },
+                    '−',
+                ),
+                h(
+                    'button',
+                    {
+                        type: 'button',
+                        onClick: () => step(1),
+                        disabled: disabled || value >= limit.max,
+                        className: btn,
+                        'aria-label': label + 'を増やす',
+                    },
+                    '＋',
+                ),
+            ),
+        )
     );
 };
 
@@ -431,16 +473,24 @@ const GUIDE_PAD = 8; // 光らせる枠の外側に取る余白
 const GuideShade = ({ box, dim }) => {
     const shade = 'fixed z-40 ' + (dim ? 'bg-black/40' : 'bg-black/70');
     const px = (n) => Math.max(0, n) + 'px';
-    if (!box) return <div className={shade + ' inset-0'} />;
+    if (!box) return h('div', { className: shade + ' inset-0' });
     const bandTop = px(box.top - GUIDE_PAD);
     const bandHeight = px(box.bottom - box.top + GUIDE_PAD * 2);
     return (
-        <React.Fragment>
-            <div className={shade} style={{ top: 0, left: 0, right: 0, height: px(box.top - GUIDE_PAD) }} />
-            <div className={shade} style={{ top: px(box.bottom + GUIDE_PAD), left: 0, right: 0, bottom: 0 }} />
-            <div className={shade} style={{ top: bandTop, height: bandHeight, left: 0, width: px(box.left - GUIDE_PAD) }} />
-            <div className={shade} style={{ top: bandTop, height: bandHeight, left: px(box.right + GUIDE_PAD), right: 0 }} />
-        </React.Fragment>
+        h(
+            React.Fragment,
+            null,
+            h('div', { className: shade, style: { top: 0, left: 0, right: 0, height: px(box.top - GUIDE_PAD) } }),
+            h('div', { className: shade, style: { top: px(box.bottom + GUIDE_PAD), left: 0, right: 0, bottom: 0 } }),
+            h('div', {
+                className: shade,
+                style: { top: bandTop, height: bandHeight, left: 0, width: px(box.left - GUIDE_PAD) },
+            }),
+            h('div', {
+                className: shade,
+                style: { top: bandTop, height: bandHeight, left: px(box.right + GUIDE_PAD), right: 0 },
+            }),
+        )
     );
 };
 
@@ -458,56 +508,75 @@ const GuideOverlay = ({ step, index, total, box, running, onDemo, onPrev, onNext
     const nav = 'px-3 py-1.5 rounded-lg text-sm font-bold disabled:opacity-30';
 
     return (
-        <React.Fragment>
-            <GuideShade box={box} dim={running} />
-            {box && (
-                <div
-                    className="fixed z-40 rounded-2xl ring-2 ring-white/80 pointer-events-none"
-                    style={{
-                        top: (box.top - GUIDE_PAD) + 'px',
-                        left: (box.left - GUIDE_PAD) + 'px',
-                        width: (box.right - box.left + GUIDE_PAD * 2) + 'px',
-                        height: (box.bottom - box.top + GUIDE_PAD * 2) + 'px',
-                    }}
-                />
-            )}
-            <div className="fixed z-40 left-0 right-0 px-4" style={place}>
-                <div className="mx-auto w-full max-w-md rounded-2xl bg-white p-4 text-slate-800 shadow-xl">
-                    <div className="flex items-baseline justify-between gap-2">
-                        <div className="text-base font-bold">{step.title}</div>
-                        <div className="shrink-0 text-xs text-slate-400 tabular">{index + 1} / {total}</div>
-                    </div>
-                    <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed">{step.body}</p>
-                    {step.demo && (
-                        <button
-                            type="button"
-                            onClick={onDemo}
-                            className="mt-3 w-full rounded-xl bg-slate-800 py-2 text-sm font-bold text-white active:opacity-80"
-                        >{running ? '試し実行を止める' : '音を聞いてみる（12秒）'}</button>
-                    )}
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="text-xs text-slate-500 underline"
-                        >閉じる</button>
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={onPrev}
-                                disabled={index === 0}
-                                className={nav + ' bg-slate-100 text-slate-700'}
-                            >戻る</button>
-                            <button
-                                type="button"
-                                onClick={onNext}
-                                className={nav + ' bg-slate-800 text-white'}
-                            >{index === total - 1 ? '終わり' : '次へ'}</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </React.Fragment>
+        h(
+            React.Fragment,
+            null,
+            h(GuideShade, { box: box, dim: running }),
+            box &&
+                h('div', {
+                    className: 'fixed z-40 rounded-2xl ring-2 ring-white/80 pointer-events-none',
+                    style: {
+                        top: box.top - GUIDE_PAD + 'px',
+                        left: box.left - GUIDE_PAD + 'px',
+                        width: box.right - box.left + GUIDE_PAD * 2 + 'px',
+                        height: box.bottom - box.top + GUIDE_PAD * 2 + 'px',
+                    },
+                }),
+            h(
+                'div',
+                { className: 'fixed z-40 left-0 right-0 px-4', style: place },
+                h(
+                    'div',
+                    { className: 'mx-auto w-full max-w-md rounded-2xl bg-white p-4 text-slate-800 shadow-xl' },
+                    h(
+                        'div',
+                        { className: 'flex items-baseline justify-between gap-2' },
+                        h('div', { className: 'text-base font-bold' }, step.title),
+                        h('div', { className: 'shrink-0 text-xs text-slate-400 tabular' }, index + 1, ' / ', total),
+                    ),
+                    h('p', { className: 'mt-1.5 whitespace-pre-line text-sm leading-relaxed' }, step.body),
+                    step.demo &&
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: onDemo,
+                                className:
+                                    'mt-3 w-full rounded-xl bg-slate-800 py-2 text-sm font-bold text-white active:opacity-80',
+                            },
+                            running ? '試し実行を止める' : '音を聞いてみる（12秒）',
+                        ),
+                    h(
+                        'div',
+                        { className: 'mt-3 flex items-center justify-between gap-2' },
+                        h(
+                            'button',
+                            { type: 'button', onClick: onClose, className: 'text-xs text-slate-500 underline' },
+                            '閉じる',
+                        ),
+                        h(
+                            'div',
+                            { className: 'flex items-center gap-2' },
+                            h(
+                                'button',
+                                {
+                                    type: 'button',
+                                    onClick: onPrev,
+                                    disabled: index === 0,
+                                    className: nav + ' bg-slate-100 text-slate-700',
+                                },
+                                '戻る',
+                            ),
+                            h(
+                                'button',
+                                { type: 'button', onClick: onNext, className: nav + ' bg-slate-800 text-white' },
+                                index === total - 1 ? '終わり' : '次へ',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
     );
 };
 
@@ -1151,350 +1220,550 @@ const App = () => {
     });
 
     return (
-        <div
-            className={'h-[100dvh] flex flex-col overflow-hidden transition-colors duration-500 text-white ' + style.bg}
-            style={{
-                paddingTop: 'env(safe-area-inset-top)',
-                paddingBottom: 'env(safe-area-inset-bottom)',
-                paddingLeft: 'env(safe-area-inset-left)',
-                paddingRight: 'env(safe-area-inset-right)',
-            }}
-        >
-            <div className="w-full max-w-md mx-auto px-4 py-3 flex-1 min-h-0 flex flex-col gap-3">
-
-                <header data-guide="header" className="shrink-0 flex items-center justify-between gap-2">
-                    {/* タイトルは見た目そのままで、タップすると更新の確認をする */}
-                    <div className="min-w-0 flex items-baseline gap-2">
-                        <h1 className="text-lg font-bold tracking-wide shrink-0">
-                            <button
-                                type="button"
-                                onClick={checkUpdate}
-                                className="active:opacity-60"
-                                aria-label="更新を確認する"
-                                title="タップで更新を確認"
-                            >log-timer</button>
-                        </h1>
-                        {updateMessage && (
-                            <span className="text-xs text-white/60 truncate">{updateMessage}</span>
-                        )}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                        {installEvent && (
-                            <button
-                                type="button"
-                                onClick={install}
-                                className="text-xs text-white px-2.5 py-1 rounded-lg bg-white/20 whitespace-nowrap"
-                            >ホーム画面に追加</button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={openGuide}
-                            disabled={isRunning}
-                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap disabled:opacity-30"
-                            aria-label="使い方のガイドを開く"
-                        >使い方</button>
-                        <button
-                            type="button"
-                            onClick={cycleSound}
-                            data-guide="sound"
-                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap"
-                            aria-label="音の鳴らし方の切り替え（音声 / 電子音 / オフ）"
-                        >{SOUND_LABEL[soundMode]}</button>
-                        <button
-                            type="button"
-                            onClick={openQr}
-                            className="text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap"
-                            aria-label="このページのQRコードを表示"
-                        >QR</button>
-                    </div>
-                </header>
-
-                {/* 左: タイマー本体 / 右: 操作ボタン */}
-                <div className="shrink-0 flex items-center gap-3">
-                    <div className="relative shrink-0" style={{ width: DIAL_SIZE, height: DIAL_SIZE }}>
-                        <svg viewBox="0 0 300 300" className="-rotate-90 w-full h-full">
-                            <circle cx="150" cy="150" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
-                            <circle
-                                cx="150" cy="150" r={RADIUS} fill="none"
-                                stroke={style.accent} strokeWidth="14" strokeLinecap="round"
-                                strokeDasharray={CIRC}
-                                strokeDashoffset={CIRC * (1 - progress)}
-                                style={{ transition: 'stroke-dashoffset 120ms linear' }}
-                            />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <div className="text-sm font-medium text-white/80">{style.text}</div>
-                            <div className="text-5xl font-bold tabular leading-none my-1">{formatTime(shownSeconds)}</div>
-                            <div className="text-xs text-white/70">
-                                {phase === PHASE.DONE
+        h(
+            'div',
+            {
+                className:
+                    'h-[100dvh] flex flex-col overflow-hidden transition-colors duration-500 text-white ' + style.bg,
+                style: {
+                    paddingTop: 'env(safe-area-inset-top)',
+                    paddingBottom: 'env(safe-area-inset-bottom)',
+                    paddingLeft: 'env(safe-area-inset-left)',
+                    paddingRight: 'env(safe-area-inset-right)',
+                },
+            },
+            h(
+                'div',
+                { className: 'w-full max-w-md mx-auto px-4 py-3 flex-1 min-h-0 flex flex-col gap-3' },
+                h(
+                    'header',
+                    { 'data-guide': 'header', className: 'shrink-0 flex items-center justify-between gap-2' },
+                    // タイトルは見た目そのままで、タップすると更新の確認をする
+                    h(
+                        'div',
+                        { className: 'min-w-0 flex items-baseline gap-2' },
+                        h(
+                            'h1',
+                            { className: 'text-lg font-bold tracking-wide shrink-0' },
+                            h(
+                                'button',
+                                {
+                                    type: 'button',
+                                    onClick: checkUpdate,
+                                    className: 'active:opacity-60',
+                                    'aria-label': '更新を確認する',
+                                    title: 'タップで更新を確認',
+                                },
+                                'log-timer',
+                            ),
+                        ),
+                        updateMessage && h('span', { className: 'text-xs text-white/60 truncate' }, updateMessage),
+                    ),
+                    h(
+                        'div',
+                        { className: 'flex flex-wrap items-center justify-end gap-2' },
+                        installEvent &&
+                            h(
+                                'button',
+                                {
+                                    type: 'button',
+                                    onClick: install,
+                                    className:
+                                        'text-xs text-white px-2.5 py-1 rounded-lg bg-white/20 whitespace-nowrap',
+                                },
+                                'ホーム画面に追加',
+                            ),
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: openGuide,
+                                disabled: isRunning,
+                                className:
+                                    'text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap disabled:opacity-30',
+                                'aria-label': '使い方のガイドを開く',
+                            },
+                            '使い方',
+                        ),
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: cycleSound,
+                                'data-guide': 'sound',
+                                className: 'text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap',
+                                'aria-label': '音の鳴らし方の切り替え（音声 / 電子音 / オフ）',
+                            },
+                            SOUND_LABEL[soundMode],
+                        ),
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: openQr,
+                                className: 'text-xs text-white/70 px-2 py-1 rounded-lg bg-white/10 whitespace-nowrap',
+                                'aria-label': 'このページのQRコードを表示',
+                            },
+                            'QR',
+                        ),
+                    ),
+                ),
+                // 左: タイマー本体 / 右: 操作ボタン
+                h(
+                    'div',
+                    { className: 'shrink-0 flex items-center gap-3' },
+                    h(
+                        'div',
+                        { className: 'relative shrink-0', style: { width: DIAL_SIZE, height: DIAL_SIZE } },
+                        h(
+                            'svg',
+                            { viewBox: '0 0 300 300', className: '-rotate-90 w-full h-full' },
+                            h('circle', {
+                                cx: '150',
+                                cy: '150',
+                                r: RADIUS,
+                                fill: 'none',
+                                stroke: 'rgba(255,255,255,0.15)',
+                                strokeWidth: '14',
+                            }),
+                            h('circle', {
+                                cx: '150',
+                                cy: '150',
+                                r: RADIUS,
+                                fill: 'none',
+                                stroke: style.accent,
+                                strokeWidth: '14',
+                                strokeLinecap: 'round',
+                                strokeDasharray: CIRC,
+                                strokeDashoffset: CIRC * (1 - progress),
+                                style: { transition: 'stroke-dashoffset 120ms linear' },
+                            }),
+                        ),
+                        h(
+                            'div',
+                            { className: 'absolute inset-0 flex flex-col items-center justify-center' },
+                            h('div', { className: 'text-sm font-medium text-white/80' }, style.text),
+                            h(
+                                'div',
+                                { className: 'text-5xl font-bold tabular leading-none my-1' },
+                                formatTime(shownSeconds),
+                            ),
+                            h(
+                                'div',
+                                { className: 'text-xs text-white/70' },
+                                phase === PHASE.DONE
                                     ? '全 ' + settings.sets + ' 回 終了'
-                                    : currentSet + ' / ' + settings.sets + ' 回目'}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 min-w-0 flex flex-col gap-2">
-                        <button
-                            type="button"
-                            onClick={toggle}
-                            data-guide="start"
-                            className="h-14 rounded-2xl bg-white text-slate-900 text-lg font-bold active:scale-95 transition-transform"
-                        >
-                            {isRunning ? '一時停止' : (phase === PHASE.IDLE || phase === PHASE.DONE ? 'スタート' : '再開')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={reset}
-                            data-guide="reset"
-                            className="h-12 rounded-2xl bg-white/15 text-white text-base font-bold active:scale-95 transition-transform"
-                        >
-                            リセット
-                        </button>
-
-                        {/* 表示方法: ↓ カウントダウン / ↑ カウントアップ */}
-                        <div data-guide="display" className="grid grid-cols-2 gap-2">
-                            {[
+                                    : currentSet + ' / ' + settings.sets + ' 回目',
+                            ),
+                        ),
+                    ),
+                    h(
+                        'div',
+                        { className: 'flex-1 min-w-0 flex flex-col gap-2' },
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: toggle,
+                                'data-guide': 'start',
+                                className:
+                                    'h-14 rounded-2xl bg-white text-slate-900 text-lg font-bold active:scale-95 transition-transform',
+                            },
+                            isRunning ? '一時停止' : phase === PHASE.IDLE || phase === PHASE.DONE ? 'スタート' : '再開',
+                        ),
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: reset,
+                                'data-guide': 'reset',
+                                className:
+                                    'h-12 rounded-2xl bg-white/15 text-white text-base font-bold active:scale-95 transition-transform',
+                            },
+                            'リセット',
+                        ),
+                        // 表示方法: ↓ カウントダウン / ↑ カウントアップ
+                        h(
+                            'div',
+                            { 'data-guide': 'display', className: 'grid grid-cols-2 gap-2' },
+                            [
                                 { key: false, label: 'カウントダウン（残り時間）' },
-                                { key: true,  label: 'カウントアップ（経過時間）' },
-                            ].map((opt) => (
-                                <button
-                                    key={String(opt.key)}
-                                    type="button"
-                                    onClick={() => setCountUp(opt.key)}
-                                    title={opt.label}
-                                    aria-label={opt.label}
-                                    aria-pressed={countUp === opt.key}
-                                    className={'h-11 rounded-xl border flex items-center justify-center transition-colors ' + (countUp === opt.key
-                                        ? 'bg-white text-slate-900 border-white'
-                                        : 'bg-white/5 text-white/80 border-white/20')}
-                                >
-                                    <ArrowIcon up={opt.key} />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* 設定（カレンダー表示中は隠して、その分カレンダーを広く使う） */}
-                {!showCalendar && (
-                    <div data-guide="settings" className="shrink-0 rounded-2xl bg-black/20 px-3 py-3">
-                        <div className="flex items-baseline justify-between mb-1">
-                            <div className="text-sm text-white/80">設定</div>
-                            <div className="text-xs text-white/60">
-                                合計 {Math.floor(totalSeconds / 60)}分{String(totalSeconds % 60).padStart(2, '0')}秒
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2">
-                            <NumberField label="準備" value={settings.prepare} limit={LIMITS.prepare} disabled={isRunning}
-                                onChange={(v) => setSettings((s) => ({ ...s, prepare: v }))} />
-                            <NumberField label="運動" value={settings.work} limit={LIMITS.work} disabled={isRunning}
-                                onChange={(v) => setSettings((s) => ({ ...s, work: v }))} />
-                            <NumberField label="休憩" value={settings.rest} limit={LIMITS.rest} disabled={isRunning}
-                                onChange={(v) => setSettings((s) => ({ ...s, rest: v }))} />
-                            <NumberField label="回数" value={settings.sets} limit={setsLimit} disabled={isRunning}
-                                onChange={(v) => setSettings((s) => ({ ...s, sets: v }))} />
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                            <button
-                                type="button"
-                                onClick={restoreDefaults}
-                                disabled={isRunning || isDefaultSettings}
-                                className="text-white underline whitespace-nowrap disabled:opacity-40"
-                            >既定値に戻す（{defaults.prepare}/{defaults.work}/{defaults.rest}/{defaults.sets}回）</button>
-                            <button
-                                type="button"
-                                onClick={saveAsDefaults}
-                                disabled={isRunning || isDefaultSettings}
-                                className="text-white underline whitespace-nowrap disabled:opacity-40"
-                                title="いまの設定を既定値として保存します"
-                            >既定値に設定</button>
-                        </div>
-                    </div>
-                )}
-
-                {/* 履歴（画面の下側。行をタップするとその設定と表示方法を読み込む） */}
-                <div data-guide="history" className="flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2">
-                    <div className="flex items-center justify-between gap-2 px-1">
-                        <div className="text-sm text-white/80">{showCalendar ? '日ごとの回数' : '履歴'}</div>
-                        <div className="flex items-center gap-5">
-                            {/* 一覧 / カレンダーの切り替え（押している方が白く反転する） */}
-                            <div className="flex items-center gap-5">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCalendar(false)}
-                                    aria-pressed={!showCalendar}
-                                    aria-label="履歴の一覧"
-                                    title="履歴の一覧"
-                                    className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
-                                        ? 'bg-white/10 text-white/70'
-                                        : 'bg-white text-slate-900')}
-                                ><ListIcon /></button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCalendar(true)}
-                                    aria-pressed={showCalendar}
-                                    aria-label="日ごとの実施回数"
-                                    title="日ごとの実施回数"
-                                    className={'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' + (showCalendar
-                                        ? 'bg-white text-slate-900'
-                                        : 'bg-white/10 text-white/70')}
-                                ><CalendarIcon /></button>
-                            </div>
-                            {history.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={clearHistory}
-                                    disabled={isRunning}
-                                    className="text-xs text-white/60 underline disabled:opacity-30"
-                                >全消去</button>
-                            )}
-                        </div>
-                    </div>
-
-                    {showCalendar ? (
-                        /* 日ごとの実施回数（月カレンダー） */
-                        <div className="flex-1 min-h-0 flex flex-col">
-                            <div className="flex items-center justify-between px-1 py-1">
-                                <button
-                                    type="button"
-                                    onClick={() => shiftMonth(-1)}
-                                    className="w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20"
-                                    aria-label="前の月"
-                                >‹</button>
-                                <div className="text-sm text-white/80">
-                                    {calMonth.y}年{calMonth.m + 1}月
-                                    <span className="ml-2 text-xs text-white/60">計 {monthTotal} 回</span>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => shiftMonth(1)}
-                                    className="w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20"
-                                    aria-label="次の月"
-                                >›</button>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1 pb-1 text-center text-xs">
-                                {WEEKDAYS.map((w, i) => (
-                                    <div key={w} className={i === 0 ? 'text-red-300' : (i === 6 ? 'text-blue-300' : 'text-white/50')}>{w}</div>
-                                ))}
-                            </div>
-                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-                                <div className="grid grid-cols-7 gap-1 text-center">
-                                    {cells.map((d, i) => {
-                                        if (d === null) return <div key={'empty' + i} />;
-                                        const n = dayCounts[calMonth.y + '-' + calMonth.m + '-' + d] || 0;
-                                        const isToday = today.getFullYear() === calMonth.y
-                                            && today.getMonth() === calMonth.m
-                                            && today.getDate() === d;
-                                        return (
-                                            <div
-                                                key={d}
-                                                className={'rounded-lg py-1 ' + (n > 0 ? 'bg-white/20' : 'bg-white/5')
-                                                    + (isToday ? ' ring-1 ring-white/70' : '')}
-                                            >
-                                                <div className="text-xs text-white/60 leading-none">{d}</div>
-                                                {/* 回数は☆で表す。狭い画面でも3つ並ぶよう字間を詰める */}
-                                                <div className="text-xs leading-none mt-1 h-4 tracking-tighter">
-                                                    {starsFor(n)}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        /* 実行の一覧 */
-                        <React.Fragment>
-                            <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80">
-                                <span className="flex-1 min-w-0">日時</span>
-                                <span className="w-8 text-right">準備</span>
-                                <span className="w-8 text-right">運動</span>
-                                <span className="w-8 text-right">休憩</span>
-                                <span className="w-8 text-right">回数</span>
-                                <span className="w-4 shrink-0" />{/* 表示方法の矢印。見出しは付けない */}
-                            </div>
-                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10">
-                                {history.length === 0 ? (
-                                    <p className="text-xs text-white/40 text-center py-4">
-                                        最後まで実行すると、ここに記録されます
-                                    </p>
-                                ) : history.map((h) => (
-                                    <button
-                                        key={h.id}
-                                        type="button"
-                                        onClick={() => recallHistory(h)}
-                                        disabled={isRunning}
-                                        title="タップするとこの設定を読み込みます（スタートで開始）"
-                                        className="w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40"
-                                    >
-                                        <span className="flex-1 min-w-0 truncate text-xs text-white/70">{formatStamp(h.at)}</span>
-                                        <span className="w-8 text-right tabular">{h.prepare}</span>
-                                        <span className="w-8 text-right tabular">{h.work}</span>
-                                        <span className="w-8 text-right tabular">{h.rest}</span>
-                                        <span className="w-8 text-right tabular">{h.sets}</span>
-                                        <span className="w-4 shrink-0 flex justify-center text-white/70">
-                                            {/* 古い記録には表示方法が入っていないので、そのときは空欄にする */}
-                                            {typeof h.countUp === 'boolean' && <ArrowIcon up={h.countUp} size={16} />}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        </React.Fragment>
-                    )}
-                </div>
-
-                <p className="shrink-0 hidden sm:block text-xs text-white/50 text-center">
-                    スペースキー: 開始 / 一時停止　・　R キー: リセット
-                </p>
-            </div>
-
-            {/* 使い方ガイド */}
-            {guideStep !== null && (
-                <GuideOverlay
-                    step={GUIDE_STEPS[guideStep]}
-                    index={guideStep}
-                    total={GUIDE_STEPS.length}
-                    box={guideArea}
-                    running={isRunning}
-                    onDemo={toggleDemo}
-                    onPrev={() => moveGuide(-1)}
-                    onNext={() => moveGuide(1)}
-                    onClose={closeGuide}
-                />
-            )}
-
-            {/* QRコード。どこをタップしても閉じる */}
-            {qrCode && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
-                    onClick={() => setQrCode(null)}
-                >
-                    <div className="flex flex-col items-center gap-3 rounded-2xl bg-white p-4 text-slate-700">
-                        {qrCode.path ? (
-                            <svg
-                                viewBox={'0 0 ' + qrCode.size + ' ' + qrCode.size}
-                                className="w-[240px] max-w-[70vw] h-auto"
-                                shapeRendering="crispEdges"
-                                role="img"
-                                aria-label="このページのQRコード"
-                            >
-                                <rect width={qrCode.size} height={qrCode.size} fill="#ffffff" />
-                                <path d={qrCode.path} fill="#000000" />
-                            </svg>
-                        ) : (
-                            <p className="text-sm">QRコードを作れませんでした</p>
-                        )}
-                        <p className="max-w-[240px] break-all text-center text-xs">{PAGE_URL}</p>
-                        <button
-                            type="button"
-                            onClick={() => setQrCode(null)}
-                            className="rounded-lg bg-slate-200 px-4 py-1.5 text-sm"
-                        >閉じる</button>
-                    </div>
-                </div>
-            )}
-        </div>
+                                { key: true, label: 'カウントアップ（経過時間）' },
+                            ].map((opt) =>
+                                h(
+                                    'button',
+                                    {
+                                        key: String(opt.key),
+                                        type: 'button',
+                                        onClick: () => setCountUp(opt.key),
+                                        title: opt.label,
+                                        'aria-label': opt.label,
+                                        'aria-pressed': countUp === opt.key,
+                                        className:
+                                            'h-11 rounded-xl border flex items-center justify-center transition-colors ' +
+                                            (countUp === opt.key
+                                                ? 'bg-white text-slate-900 border-white'
+                                                : 'bg-white/5 text-white/80 border-white/20'),
+                                    },
+                                    h(ArrowIcon, { up: opt.key }),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                // 設定（カレンダー表示中は隠して、その分カレンダーを広く使う）
+                !showCalendar &&
+                    h(
+                        'div',
+                        { 'data-guide': 'settings', className: 'shrink-0 rounded-2xl bg-black/20 px-3 py-3' },
+                        h(
+                            'div',
+                            { className: 'flex items-baseline justify-between mb-1' },
+                            h('div', { className: 'text-sm text-white/80' }, '設定'),
+                            h(
+                                'div',
+                                { className: 'text-xs text-white/60' },
+                                '合計 ',
+                                Math.floor(totalSeconds / 60),
+                                '分',
+                                String(totalSeconds % 60).padStart(2, '0'),
+                                '秒',
+                            ),
+                        ),
+                        h(
+                            'div',
+                            { className: 'grid grid-cols-4 gap-2' },
+                            h(NumberField, {
+                                label: '準備',
+                                value: settings.prepare,
+                                limit: LIMITS.prepare,
+                                disabled: isRunning,
+                                onChange: (v) => setSettings((s) => ({ ...s, prepare: v })),
+                            }),
+                            h(NumberField, {
+                                label: '運動',
+                                value: settings.work,
+                                limit: LIMITS.work,
+                                disabled: isRunning,
+                                onChange: (v) => setSettings((s) => ({ ...s, work: v })),
+                            }),
+                            h(NumberField, {
+                                label: '休憩',
+                                value: settings.rest,
+                                limit: LIMITS.rest,
+                                disabled: isRunning,
+                                onChange: (v) => setSettings((s) => ({ ...s, rest: v })),
+                            }),
+                            h(NumberField, {
+                                label: '回数',
+                                value: settings.sets,
+                                limit: setsLimit,
+                                disabled: isRunning,
+                                onChange: (v) => setSettings((s) => ({ ...s, sets: v })),
+                            }),
+                        ),
+                        h(
+                            'div',
+                            { className: 'mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm' },
+                            h(
+                                'button',
+                                {
+                                    type: 'button',
+                                    onClick: restoreDefaults,
+                                    disabled: isRunning || isDefaultSettings,
+                                    className: 'text-white underline whitespace-nowrap disabled:opacity-40',
+                                },
+                                '既定値に戻す（',
+                                defaults.prepare,
+                                '/',
+                                defaults.work,
+                                '/',
+                                defaults.rest,
+                                '/',
+                                defaults.sets,
+                                '回）',
+                            ),
+                            h(
+                                'button',
+                                {
+                                    type: 'button',
+                                    onClick: saveAsDefaults,
+                                    disabled: isRunning || isDefaultSettings,
+                                    className: 'text-white underline whitespace-nowrap disabled:opacity-40',
+                                    title: 'いまの設定を既定値として保存します',
+                                },
+                                '既定値に設定',
+                            ),
+                        ),
+                    ),
+                // 履歴（画面の下側。行をタップするとその設定と表示方法を読み込む）
+                h(
+                    'div',
+                    {
+                        'data-guide': 'history',
+                        className: 'flex-1 min-h-0 flex flex-col rounded-2xl bg-black/20 px-3 py-2',
+                    },
+                    h(
+                        'div',
+                        { className: 'flex items-center justify-between gap-2 px-1' },
+                        h('div', { className: 'text-sm text-white/80' }, showCalendar ? '日ごとの回数' : '履歴'),
+                        h(
+                            'div',
+                            { className: 'flex items-center gap-5' },
+                            // 一覧 / カレンダーの切り替え（押している方が白く反転する）
+                            h(
+                                'div',
+                                { className: 'flex items-center gap-5' },
+                                h(
+                                    'button',
+                                    {
+                                        type: 'button',
+                                        onClick: () => setShowCalendar(false),
+                                        'aria-pressed': !showCalendar,
+                                        'aria-label': '履歴の一覧',
+                                        title: '履歴の一覧',
+                                        className:
+                                            'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' +
+                                            (showCalendar ? 'bg-white/10 text-white/70' : 'bg-white text-slate-900'),
+                                    },
+                                    h(ListIcon, null),
+                                ),
+                                h(
+                                    'button',
+                                    {
+                                        type: 'button',
+                                        onClick: () => setShowCalendar(true),
+                                        'aria-pressed': showCalendar,
+                                        'aria-label': '日ごとの実施回数',
+                                        title: '日ごとの実施回数',
+                                        className:
+                                            'w-7 h-7 rounded-lg flex items-center justify-center transition-colors ' +
+                                            (showCalendar ? 'bg-white text-slate-900' : 'bg-white/10 text-white/70'),
+                                    },
+                                    h(CalendarIcon, null),
+                                ),
+                            ),
+                            history.length > 0 &&
+                                h(
+                                    'button',
+                                    {
+                                        type: 'button',
+                                        onClick: clearHistory,
+                                        disabled: isRunning,
+                                        className: 'text-xs text-white/60 underline disabled:opacity-30',
+                                    },
+                                    '全消去',
+                                ),
+                        ),
+                    ),
+                    showCalendar
+                        ? /* 日ごとの実施回数（月カレンダー） */ h(
+                              'div',
+                              { className: 'flex-1 min-h-0 flex flex-col' },
+                              h(
+                                  'div',
+                                  { className: 'flex items-center justify-between px-1 py-1' },
+                                  h(
+                                      'button',
+                                      {
+                                          type: 'button',
+                                          onClick: () => shiftMonth(-1),
+                                          className:
+                                              'w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20',
+                                          'aria-label': '前の月',
+                                      },
+                                      '‹',
+                                  ),
+                                  h(
+                                      'div',
+                                      { className: 'text-sm text-white/80' },
+                                      calMonth.y,
+                                      '年',
+                                      calMonth.m + 1,
+                                      '月',
+                                      h('span', { className: 'ml-2 text-xs text-white/60' }, '計 ', monthTotal, ' 回'),
+                                  ),
+                                  h(
+                                      'button',
+                                      {
+                                          type: 'button',
+                                          onClick: () => shiftMonth(1),
+                                          className:
+                                              'w-7 h-7 rounded-lg bg-white/10 text-white/80 leading-none active:bg-white/20',
+                                          'aria-label': '次の月',
+                                      },
+                                      '›',
+                                  ),
+                              ),
+                              h(
+                                  'div',
+                                  { className: 'grid grid-cols-7 gap-1 pb-1 text-center text-xs' },
+                                  WEEKDAYS.map((w, i) =>
+                                      h(
+                                          'div',
+                                          {
+                                              key: w,
+                                              className:
+                                                  i === 0
+                                                      ? 'text-red-300'
+                                                      : i === 6
+                                                        ? 'text-blue-300'
+                                                        : 'text-white/50',
+                                          },
+                                          w,
+                                      ),
+                                  ),
+                              ),
+                              h(
+                                  'div',
+                                  { className: 'flex-1 min-h-0 overflow-y-auto overscroll-contain' },
+                                  h(
+                                      'div',
+                                      { className: 'grid grid-cols-7 gap-1 text-center' },
+                                      cells.map((d, i) => {
+                                          if (d === null) return h('div', { key: 'empty' + i });
+                                          const n = dayCounts[calMonth.y + '-' + calMonth.m + '-' + d] || 0;
+                                          const isToday =
+                                              today.getFullYear() === calMonth.y &&
+                                              today.getMonth() === calMonth.m &&
+                                              today.getDate() === d;
+                                          return h(
+                                              'div',
+                                              {
+                                                  key: d,
+                                                  className:
+                                                      'rounded-lg py-1 ' +
+                                                      (n > 0 ? 'bg-white/20' : 'bg-white/5') +
+                                                      (isToday ? ' ring-1 ring-white/70' : ''),
+                                              },
+                                              h('div', { className: 'text-xs text-white/60 leading-none' }, d),
+                                              // 回数は☆で表す。狭い画面でも3つ並ぶよう字間を詰める
+                                              h(
+                                                  'div',
+                                                  { className: 'text-xs leading-none mt-1 h-4 tracking-tighter' },
+                                                  starsFor(n),
+                                              ),
+                                          );
+                                      }),
+                                  ),
+                              ),
+                          )
+                        : /* 実行の一覧 */ h(
+                              React.Fragment,
+                              null,
+                              h(
+                                  'div',
+                                  { className: 'flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-sm text-white/80' },
+                                  h('span', { className: 'flex-1 min-w-0' }, '日時'),
+                                  h('span', { className: 'w-8 text-right' }, '準備'),
+                                  h('span', { className: 'w-8 text-right' }, '運動'),
+                                  h('span', { className: 'w-8 text-right' }, '休憩'),
+                                  h('span', { className: 'w-8 text-right' }, '回数'),
+                                  h('span', { className: 'w-4 shrink-0' }), // 表示方法の矢印。見出しは付けない
+                              ),
+                              h(
+                                  'div',
+                                  {
+                                      className:
+                                          'flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/10',
+                                  },
+                                  history.length === 0
+                                      ? h(
+                                            'p',
+                                            { className: 'text-xs text-white/40 text-center py-4' },
+                                            '最後まで実行すると、ここに記録されます',
+                                        )
+                                      : history.map((entry) =>
+                                            h(
+                                                'button',
+                                                {
+                                                    key: entry.id,
+                                                    type: 'button',
+                                                    onClick: () => recallHistory(entry),
+                                                    disabled: isRunning,
+                                                    title: 'タップするとこの設定を読み込みます（スタートで開始）',
+                                                    className:
+                                                        'w-full flex items-center gap-1.5 px-2 py-2 text-sm text-left active:bg-white/10 disabled:opacity-40',
+                                                },
+                                                h(
+                                                    'span',
+                                                    { className: 'flex-1 min-w-0 truncate text-xs text-white/70' },
+                                                    formatStamp(entry.at),
+                                                ),
+                                                h('span', { className: 'w-8 text-right tabular' }, entry.prepare),
+                                                h('span', { className: 'w-8 text-right tabular' }, entry.work),
+                                                h('span', { className: 'w-8 text-right tabular' }, entry.rest),
+                                                h('span', { className: 'w-8 text-right tabular' }, entry.sets),
+                                                h(
+                                                    'span',
+                                                    { className: 'w-4 shrink-0 flex justify-center text-white/70' },
+                                                    // 古い記録には表示方法が入っていないので、そのときは空欄にする
+                                                    typeof entry.countUp === 'boolean' &&
+                                                        h(ArrowIcon, { up: entry.countUp, size: 16 }),
+                                                ),
+                                            ),
+                                        ),
+                              ),
+                          ),
+                ),
+                h(
+                    'p',
+                    { className: 'shrink-0 hidden sm:block text-xs text-white/50 text-center' },
+                    'スペースキー: 開始 / 一時停止　・　R キー: リセット',
+                ),
+            ),
+            // 使い方ガイド
+            guideStep !== null &&
+                h(GuideOverlay, {
+                    step: GUIDE_STEPS[guideStep],
+                    index: guideStep,
+                    total: GUIDE_STEPS.length,
+                    box: guideArea,
+                    running: isRunning,
+                    onDemo: toggleDemo,
+                    onPrev: () => moveGuide(-1),
+                    onNext: () => moveGuide(1),
+                    onClose: closeGuide,
+                }),
+            // QRコード。どこをタップしても閉じる
+            qrCode &&
+                h(
+                    'div',
+                    {
+                        className: 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6',
+                        onClick: () => setQrCode(null),
+                    },
+                    h(
+                        'div',
+                        { className: 'flex flex-col items-center gap-3 rounded-2xl bg-white p-4 text-slate-700' },
+                        qrCode.path
+                            ? h(
+                                  'svg',
+                                  {
+                                      viewBox: '0 0 ' + qrCode.size + ' ' + qrCode.size,
+                                      className: 'w-[240px] max-w-[70vw] h-auto',
+                                      shapeRendering: 'crispEdges',
+                                      role: 'img',
+                                      'aria-label': 'このページのQRコード',
+                                  },
+                                  h('rect', { width: qrCode.size, height: qrCode.size, fill: '#ffffff' }),
+                                  h('path', { d: qrCode.path, fill: '#000000' }),
+                              )
+                            : h('p', { className: 'text-sm' }, 'QRコードを作れませんでした'),
+                        h('p', { className: 'max-w-[240px] break-all text-center text-xs' }, PAGE_URL),
+                        h(
+                            'button',
+                            {
+                                type: 'button',
+                                onClick: () => setQrCode(null),
+                                className: 'rounded-lg bg-slate-200 px-4 py-1.5 text-sm',
+                            },
+                            '閉じる',
+                        ),
+                    ),
+                ),
+        )
     );
 };
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(h(App, null));

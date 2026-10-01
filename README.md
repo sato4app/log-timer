@@ -35,7 +35,7 @@ PWA なのでスマホのホーム画面に追加でき、オフラインでも�
   - キーボードでは ← → でページ送り、Esc で閉じます。実行中はガイドを開けません
 - **QRコード**: 画面右上の「QR」ボタンで、このページのURLをQRコードで表示します。別の端末のカメラで読み取ってもらえば、同じアプリをすぐ開けます（どこをタップしても閉じます）
 - 実行中は画面のスリープを抑止（対応ブラウザのみ）
-- **更新の確認**: 画面左上の「log-timer」をタップすると、端末に入っている版とサーバー側の版を見比べます。違っていれば新しい版を取り込んで読み込み直し、同じなら「最新です（v17）」と数秒だけ表示します（見た目はタイトルのままで、ボタンには見えません）。実行中の記録が消えないよう、タイマーを走らせている間は確認しません
+- **更新の確認**: 画面左上の「log-timer」をタップすると、端末に入っている版とサーバー側の版を見比べます。違っていれば新しい版を取り込んで読み込み直し、同じなら「最新です（v18）」と数秒だけ表示します（見た目はタイトルのままで、ボタンには見えません）。実行中の記録が消えないよう、タイマーを走らせている間は確認しません
 - キーボード操作: スペースキー = 開始 / 一時停止、R キー = リセット
 
 準備や休憩を 0 秒にすると、そのフェーズは読み飛ばされます。
@@ -63,7 +63,7 @@ GitHub Pages を使う場合（このリポジトリは `sato4app/log-timer`）:
 
 ### PC で動かす（開発時）
 
-`app.js` を Babel が読み込むため、`file://` で直接開くと動作しません。
+Service Worker（オフライン動作・ホーム画面への追加）は `file://` では動かないため、
 ローカルサーバーを起動してください。
 
 ```bash
@@ -74,12 +74,44 @@ npx serve .
 
 ブラウザで http://localhost:8000 を開きます。
 
+### スタイル（Tailwind CSS）のビルド
+
+画面のスタイルは、Tailwind CSS の CLI で生成した `styles.css` を読み込んでいます。
+`app.js` や `index.html` で**新しいクラス名を使ったとき**は、次のコマンドで作り直してください
+（Node.js が必要です。`node_modules` は作られません）。
+
+```bash
+npx tailwindcss@3.4.17 -c tailwind.config.js -i tailwind.input.css -o styles.css --minify
+```
+
+クラス名は `app.js` と `index.html` の文字列から拾うため、`'bg-red-800'` のように完全な形で書きます。
+`'bg-' + color` のように組み立てたクラスは `styles.css` に入りません。
+作り直したら `service-worker.js` の `CACHE_NAME` の版数も上げてください。
+
+### CDN ライブラリの版の上げ方
+
+`index.html` で CDN から読み込むライブラリ（React、ReactDOM、qrcode-generator）は版を固定し、
+`integrity` 属性で中身が変わっていないことをブラウザに確かめさせています。
+配信元が改ざんされると読み込みが止まり、改ざんされたコードは実行されません。
+
+版を上げるときは、URL の版と `integrity` の値を一緒に書き換えます。
+
+```bash
+# 新しい版のハッシュを作る（<URL> は書き換えた後のURL）
+curl -sL <URL> | openssl dgst -sha384 -binary | openssl base64 -A
+```
+
+出力の先頭に `sha384-` を付けて `integrity` に入れ、`CACHE_NAME` の版数も上げます。
+なお React は 18.3.1 が UMD 版の最終版です（React 19 には今の読み込み方がありません）。
+
 ### ファイル構成
 
 | ファイル | 内容 |
 | --- | --- |
-| `index.html` | CDN 読み込み、PWA 用メタタグ、マウント先 |
-| `app.js` | React コンポーネント（JSX、Babel でブラウザ内変換） |
+| `index.html` | CDN・`styles.css` の読み込み、PWA 用メタタグ、マウント先 |
+| `app.js` | React コンポーネント（JSX は使わず、`h(要素, 属性, 子要素...)` = `React.createElement` で記述） |
+| `styles.css` | Tailwind CSS の CLI で生成したスタイル（手で編集しない） |
+| `tailwind.config.js` / `tailwind.input.css` | `styles.css` を生成するための設定と元ファイル |
 | `manifest.json` | アプリ名・アイコン・表示方法の定義 |
 | `service-worker.js` | オフライン用キャッシュ |
 | `icons/icon-180.png` | iOS ホーム画面用（apple-touch-icon） |
@@ -89,10 +121,9 @@ npx serve .
 
 ### 技術
 
-- React 18（CDN / UMD）
-- Tailwind CSS（CDN）
-- Babel standalone（ブラウザ内で JSX を変換）
-- qrcode-generator（CDN。QRコードの生成）
+- React 18.3.1（CDN / UMD。`integrity` で検証）
+- Tailwind CSS 3.4.17（CLI でビルドした `styles.css` を同梱）
+- qrcode-generator 1.4.4（CDN。QRコードの生成。`integrity` で検証）
 - Web Audio API（電子音）、Web Speech API / SpeechSynthesis（読み上げ）、Screen Wake Lock API（スリープ抑止）
 
 計時は `setInterval` のカウントではなく終了時刻（実時刻）との差分で行うため、
@@ -113,6 +144,6 @@ CDN から読み込むライブラリも Service Worker がキャッシュする
   ※ アプリアイコン（`icons/icon-180.png` / `icon-192.png` / `icon-512.png`）は生成AI で
   作成したもので、著作権を主張していない。MIT License はソースコードに対するものである。
 
-  なお、CDN から読み込むライブラリ（React、Tailwind CSS、Babel standalone、
-  qrcode-generator）は本リポジトリに含まれず、本ライセンスの対象外である
-  （それぞれの提供元の利用条件に従う）。
+  なお、CDN から読み込むライブラリ（React、qrcode-generator）は本リポジトリに含まれず、
+  本ライセンスの対象外である（それぞれの提供元の利用条件に従う）。
+  `styles.css` は Tailwind CSS（MIT License）で生成したもので、先頭に同ライセンスの表記がある。

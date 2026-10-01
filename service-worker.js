@@ -1,13 +1,14 @@
 // log-timer Service Worker
 // キャッシュ名を変えると古いキャッシュを破棄して入れ替わる。
 // このアプリの版数はここ1箇所だけ。ページ側もこの名前を聞きに来る（タイトルをタップしたときの更新確認）
-const CACHE_NAME = 'logtimer-v17';
+const CACHE_NAME = 'logtimer-v18';
 
 // アプリ本体（同一オリジン）。相対パスなのでサブディレクトリ配信でも動く
 const APP_SHELL = [
     './',
     './index.html',
     './app.js',
+    './styles.css',
     './manifest.json',
     './icons/icon-180.png',
     './icons/icon-192.png',
@@ -39,8 +40,9 @@ self.addEventListener('message', (event) => {
     if (event.data === 'skip-waiting') self.skipWaiting();
 });
 
-// キャッシュに入れてよいレスポンスか（opaque はCDNのスクリプト等）
-const isCacheable = (res) => res && (res.status === 200 || res.type === 'opaque');
+// キャッシュに入れてよいレスポンスか。CDN のスクリプトも crossorigin 付きで読むので状態が見える。
+// 中身の見えない opaque は、エラーの応答かどうか区別できないので入れない
+const isCacheable = (res) => res && res.status === 200;
 
 self.addEventListener('fetch', (event) => {
     const req = event.request;
@@ -84,7 +86,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // CDN（React / Tailwind / Babel）: 一度取得したらキャッシュから返す＝オフラインでも起動する
+    // CDN（React / qrcode-generator）: 一度取得したらキャッシュから返す＝オフラインでも起動する
     event.respondWith((async () => {
         const cache = await caches.open(CACHE_NAME);
         const cached = await cache.match(req);
